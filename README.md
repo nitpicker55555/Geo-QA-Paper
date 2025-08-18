@@ -101,7 +101,7 @@ python populate_chroma_vectors.py
 python app_changed_agent.py
 ```
 
-The application will start on `http://localhost:5001`
+The application will start on `http://localhost:9090`
 
 ### Example Queries
 
