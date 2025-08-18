@@ -61,7 +61,7 @@ class Config:
     GEOJSON_DIR = 'static/geojson'
     RESPONSES_FILE = 'responses.jsonl'
     DATA_LOG_FILE = 'static/data3.txt'
-    TEST_DATA_FILE = 'jsonl_files/eval_relationships_four_final_eval3.jsonl'
+    TEST_DATA_FILE = 'evaluation_files/evaluation_fourth_dataset.jsonl'
 
 
 # Initialize Flask application with optimized configuration
@@ -869,15 +869,14 @@ def home():
         del_uploaded_sql()  # Assuming this function exists
 
         # Initialize session variables with validation
-        session.update({
-            'file_path': '',
-            'ip_': request.remote_addr or 'unknown',
-            'uploaded_indication': None,
-            'sid': '',
-            'globals_dict': None,
-            'template': False,
-            'history': []
-        })
+        # IMPORTANT: Don't reset globals_dict or col_name_mapping_dict here
+        # They should persist across page refreshes and be managed by SessionManager
+        session.setdefault('file_path', '')
+        session.setdefault('ip_', request.remote_addr or 'unknown')
+        session.setdefault('uploaded_indication', None)
+        session.setdefault('sid', '')
+        session.setdefault('template', False)
+        session.setdefault('history', [])
 
         # Parse user agent with error handling
         user_agent_string = request.headers.get('User-Agent')

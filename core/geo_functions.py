@@ -54,9 +54,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
-EPSG_WGS84 = 4326
-EPSG_UTM32N = 32632
-EPSG_UTM33N = 32633
 MAX_POOL_SIZE = 20
 MIN_POOL_SIZE = 5
 CACHE_SIZE = 1000
@@ -123,7 +120,8 @@ class DatabaseManager:
             logger.info("Database pool closed")
 
 # Global instances
-conn_params = "dbname='osm_database' user='postgres' host='localhost' password='9417941'"
+from config.database_config import POSTGRES_CONN_STRING
+conn_params = POSTGRES_CONN_STRING
 db_manager = DatabaseManager(conn_params)
 
 # Optimized global dictionaries with LRU cache
@@ -174,11 +172,15 @@ class OptimizedGlobalStorage:
 global_id_geo = OptimizedGlobalStorage()
 global_id_attribute = {}
 
-# Configuration dictionaries (optimized)
-similar_ori_table_name_dict = {
-    'lands': "area", 'building': 'buildings', 'point': 'points',
-    'soil': 'soil', 'areas': 'area', 'land': 'area'
-}
+# Import configuration from database_config
+from config.database_config import (
+    COL_NAME_MAPPING_DICT as col_name_mapping_dict,
+    SIMILAR_TABLE_MAPPINGS as similar_ori_table_name_dict,
+    POSTGRES_CONN_STRING,
+    EPSG_WGS84,
+    EPSG_UTM32N,
+    EPSG_UTM33N
+)
 
 def map_keys_to_values(similar_col_name_dict: Dict[str, str]) -> Dict[str, str]:
     """Optimized key-value mapping"""
@@ -189,45 +191,6 @@ def map_keys_to_values(similar_col_name_dict: Dict[str, str]) -> Dict[str, str]:
     return result
 
 similar_table_name_dict = map_keys_to_values(similar_ori_table_name_dict)
-
-col_name_mapping_dict = {
-    "soil": {
-        "osm_id": "objectid",
-        "fclass": "leg_text",
-        "name": "leg_text",
-        "select_query": "SELECT leg_text,objectid,geom",
-        "graph_name": "soilcomplete",
-        "notice": "This Table Only has type Column."
-    },
-    "buildings": {
-        "osm_id": "osm_id",
-        "fclass": "type",
-        "name": "name",
-        "select_query": "SELECT 'buildings' AS source_table, type,name,osm_id,geom",
-        "graph_name": "buildings"
-    },
-    "area": {
-        "osm_id": "osm_id",
-        "fclass": "fclass",
-        "name": "name",
-        "select_query": "SELECT 'landuse' AS source_table, fclass,name,osm_id,geom",
-        "graph_name": "landuse"
-    },
-    "points": {
-        "osm_id": "osm_id",
-        "fclass": "fclass",
-        "name": "name",
-        "select_query": "SELECT 'points' AS source_table, fclass,name,osm_id,geom",
-        "graph_name": "points"
-    },
-    "lines": {
-        "osm_id": "osm_id",
-        "fclass": "fclass",
-        "name": "name",
-        "select_query": "SELECT 'lines' AS source_table, fclass,name,osm_id,geom",
-        "graph_name": "lines"
-    }
-}
 
 revers_mapping_dict = {}
 

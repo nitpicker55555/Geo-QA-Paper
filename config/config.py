@@ -38,7 +38,7 @@ class BaseConfig:
     GEOJSON_DIR = 'static/geojson'
     RESPONSES_FILE = 'responses.jsonl'
     DATA_LOG_FILE = 'static/data3.txt'
-    TEST_DATA_FILE = 'jsonl_files/eval_relationships_four_final_eval3.jsonl'
+    TEST_DATA_FILE = 'evaluation_files/evaluation_fourth_dataset.jsonl'
     STATIC_FOLDER = 'static'
     TEMPLATE_FOLDER = 'templates'
     

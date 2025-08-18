@@ -36,6 +36,13 @@ from services.chat_py import *
 from utils.levenshtein import are_strings_similar
 from .geo_functions import *
 from .bounding_box import find_boundbox
+from .neo4j_mapper import (
+    get_neo4j_mapper,
+    get_fclass_dict_for_similarity,
+    get_name_dict_for_similarity,
+    get_all_fclass_set,
+    get_all_name_set
+)
 
 
 # ============================================================================
@@ -51,10 +58,14 @@ fclass_dict: Dict[str, Any] = {}
 name_dict: Dict[str, Any] = {}
 
 # Global sets and dictionaries for similarity matching
+# These will now be populated from Neo4j when needed
 all_fclass_set: Set[str] = set()
 all_name_set: Set[str] = set()
 fclass_dict_4_similarity: Dict[str, Set[str]] = {}
 name_dict_4_similarity: Dict[str, Set[str]] = {}
+
+# Flag to track if Neo4j data has been loaded
+_neo4j_data_loaded = False
 
 
 # ============================================================================
@@ -135,14 +146,15 @@ def cached(cache_key_func: Optional[Callable] = None):
 # Optimized Data Structure Initialization
 # ============================================================================
 
-def initialize_similarity_dictionaries(use_db: bool = True) -> None:
+def initialize_similarity_dictionaries(use_db: bool = True, use_neo4j: bool = True) -> None:
     """
     Initialize similarity dictionaries with optimized performance
     
     Args:
         use_db: If True, query database for actual values. If False, use empty sets.
+        use_neo4j: If True, use Neo4j for data. If False, use PostgreSQL directly.
     """
-    global fclass_dict_4_similarity, name_dict_4_similarity, all_fclass_set, all_name_set
+    global fclass_dict_4_similarity, name_dict_4_similarity, all_fclass_set, all_name_set, _neo4j_data_loaded
     
     if not use_db:
         # Initialize with empty sets for testing without database
@@ -152,7 +164,20 @@ def initialize_similarity_dictionaries(use_db: bool = True) -> None:
                 name_dict_4_similarity[table_name] = set()
         return
     
-    # Use ThreadPoolExecutor for parallel processing
+    if use_neo4j:
+        try:
+            # Load from Neo4j
+            mapper = get_neo4j_mapper()
+            fclass_dict_4_similarity, name_dict_4_similarity = mapper.build_similarity_dictionaries()
+            all_fclass_set = mapper.get_all_fclass_values()
+            all_name_set = mapper.get_all_name_values()
+            _neo4j_data_loaded = True
+            print("Loaded similarity dictionaries from Neo4j")
+            return
+        except Exception as e:
+            print(f"Failed to load from Neo4j: {e}, falling back to PostgreSQL")
+    
+    # Original PostgreSQL implementation
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = []
         
@@ -189,6 +214,15 @@ def _process_table_attributes(table_name: str, attribute_type: str) -> Tuple[str
     """
     attribute_set = ids_of_attribute(table_name, attribute_type)
     return table_name, attribute_type, attribute_set
+
+
+def ensure_neo4j_data_loaded():
+    """
+    Ensure Neo4j data is loaded before using similarity dictionaries
+    """
+    global _neo4j_data_loaded
+    if not _neo4j_data_loaded:
+        initialize_similarity_dictionaries(use_db=True, use_neo4j=True)
 
 
 # Simple initialization similar to reference file

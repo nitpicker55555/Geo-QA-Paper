@@ -39,7 +39,7 @@ client = OpenAI()
 
 # Initialize ChromaDB client and collections
 chroma_client = chromadb.HttpClient(host="localhost", port=8000)
-name_collection = chroma_client.get_or_create_collection("buildings_name_vec")
+name_collection = chroma_client.get_or_create_collection("name_vector")
 fclass_collection = chroma_client.get_or_create_collection("fclass_vector")
 
 # OpenAI embedding function for ChromaDB
