@@ -172,9 +172,9 @@ The `evaluation_files/` directory contains four test datasets used in the paper,
 ### Fields Explanation
 - `query_result`: The natural language query to be processed
 - `words`: Array of entities to search for, each with:
-  - `fclass`: Feature classification (required)
-  - `name`: Specific entity name (optional)
-- `relationships`: Spatial operations to perform (contains, intersects, buffer)
+  - `fclass`: Feature classification
+  - `name`: Specific entity name
+- `relationships`: Spatial operations to perform (contains, intersects, buffer, within)
 - `num_result`: Expected number of results for validation
 
 ### Ground Truth Calculation
