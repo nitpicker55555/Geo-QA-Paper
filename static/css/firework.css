@@ -1,0 +1,18 @@
+#myConfettiContainer {
+    pointer-events: none;
+    position: fixed;  /* 或使用 'fixed'，如果需要在滚动时保持位置不变 */
+    top: 0;
+    width: 100vh;        /* 容器宽度为100% */
+    z-index: 9;
+    /* 可以根据需要添加更多的样式 */
+}
+
+
+.content-container {
+    position: relative; /* 确保div也是定位的 */
+    top: 10px;
+    text-align: center;
+    z-index: 4; /* 设置较高的z-index */
+    /*margin-top: 10%;*/
+}
+

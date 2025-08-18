@@ -1,0 +1,100 @@
+{"query_result": "Can you show me which pitch contains a recycling glass?", "words": [{"fclass": "pitch"}, {"fclass": "recycling glass"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "I am curious where parking multistorey contains fast food", "words": [{"fclass": "parking multistorey"}, {"fclass": "fast food"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Does the parking multistorey contain a waste basket?", "words": [{"fclass": "parking multistorey"}, {"fclass": "waste basket"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "I am curious about a hotel which contains a water.", "words": [{"fclass": "hotel"}, {"fclass": "water"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Can you show me the community centre that contains an waste basket?", "words": [{"fclass": "community centre"}, {"fclass": "waste basket"}], "relationships": ["contains"], "num_result": 5}
+{"query_result": "I am curious about industrials which contain substation.", "words": [{"fclass": "industrial"}, {"fclass": "substation"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Where can I find a suburb that contains an camera surveillance?", "words": [{"fclass": "suburb"}, {"fclass": "camera surveillance"}], "relationships": ["contains"], "num_result": 2}
+{"query_result": "I am curious about the car rental that contains a service.", "words": [{"fclass": "car rental"}, {"fclass": "service"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "I am curious where commercial contains substation", "words": [{"fclass": "commercial"}, {"fclass": "substation"}], "relationships": ["contains"], "num_result": 2}
+{"query_result": "I am curious about the farmlands that contains a castle.", "words": [{"fclass": "farmland"}, {"fclass": "castle"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Is there a graveyard that contains a wayside cross?", "words": [{"fclass": "graveyard"}, {"fclass": "wayside cross"}], "relationships": ["contains"], "num_result": 44}
+{"query_result": "I am curious to know if museum contains castle.", "words": [{"fclass": "museum"}, {"fclass": "castle"}], "relationships": ["contains"], "num_result": 2}
+{"query_result": "Does the park contain a pitch?", "words": [{"fclass": "park"}, {"fclass": "pitch"}], "relationships": ["contains"], "num_result": 373}
+{"query_result": "I am curious which town contains a parking.", "words": [{"fclass": "town"}, {"fclass": "parking"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Can you show me the recreation ground that contains an kindergarten?", "words": [{"fclass": "recreation ground"}, {"fclass": "kindergarten"}], "relationships": ["contains"], "num_result": 5}
+{"query_result": "Where is car dealership which contains clothes?", "words": [{"fclass": "car dealership"}, {"fclass": "clothes"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Where is hospital which contains christian protestant?", "words": [{"fclass": "hospital"}, {"fclass": "christian protestant"}], "relationships": ["contains"], "num_result": 2}
+{"query_result": "Can you show me which grass contains a wastewater plant?", "words": [{"fclass": "grass"}, {"fclass": "wastewater plant"}], "relationships": ["contains"], "num_result": 3}
+{"query_result": "I want to know about the suburb which contains a sports centre.", "words": [{"fclass": "suburb"}, {"fclass": "sports centre"}], "relationships": ["contains"], "num_result": 3}
+{"query_result": "Can you show me the theatre which contains bench?", "words": [{"fclass": "theatre"}, {"fclass": "bench"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Can you show me the locality which contains prefabricated?", "words": [{"fclass": "locality"}, {"fclass": "prefabricated"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "I am interested in knowing which water contains a tree.", "words": [{"fclass": "water"}, {"fclass": "tree"}], "relationships": ["contains"], "num_result": 25}
+{"query_result": "Where is locality which contains waterfall?", "words": [{"fclass": "locality"}, {"fclass": "waterfall"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "Can you show me the camera surveillance that contains an clothes?", "words": [{"fclass": "camera surveillance"}, {"fclass": "clothes"}], "relationships": ["contains"], "num_result": 1}
+{"query_result": "I am curious to know hotels which contains parking bicycle", "words": [{"fclass": "hotel"}, {"fclass": "parking bicycle"}], "relationships": ["contains"], "num_result": 2}
+{"query_result": "Where does the track intersect with unclassified?", "words": [{"fclass": "track"}, {"fclass": "unclassified"}], "relationships": ["intersects"], "num_result": 3463}
+{"query_result": "Where does the mall intersect with the residential?", "words": [{"fclass": "mall"}, {"fclass": "residential"}], "relationships": ["intersects"], "num_result": 30}
+{"query_result": "Where does the track grade1 intersect with the tertiary link?", "words": [{"fclass": "track grade1"}, {"fclass": "tertiary link"}], "relationships": ["intersects"], "num_result": 7}
+{"query_result": "Where is rack intersects with track grade2?", "words": [{"fclass": "rack"}, {"fclass": "track grade2"}], "relationships": ["intersects"], "num_result": 2}
+{"query_result": "Where is water intersects with wetland?", "words": [{"fclass": "water"}, {"fclass": "wetland"}], "relationships": ["intersects"], "num_result": 1120}
+{"query_result": "Can you tell me where the service intersects with parking entranceway?", "words": [{"fclass": "service"}, {"fclass": "parking entrance"}], "relationships": ["intersects"], "num_result": 147}
+{"query_result": "I am curious to find where are tertiary intersect with the tram?", "words": [{"fclass": "tertiary"}, {"fclass": "tram"}], "relationships": ["intersects"], "num_result": 54}
+{"query_result": "I am curious to find where are tertiary intersect with the parking underground?", "words": [{"fclass": "tertiary"}, {"fclass": "parking underground"}], "relationships": ["intersects"], "num_result": 1}
+{"query_result": "Where is dam intersects with track grade2", "words": [{"fclass": "dam"}, {"fclass": "track grade2"}], "relationships": ["intersects"], "num_result": 1}
+{"query_result": "Where is service that intersects with motorway", "words": [{"fclass": "service"}, {"fclass": "motorway"}], "relationships": ["intersects"], "num_result": 211}
+{"query_result": "Where is digester intersects with residential?", "words": [{"fclass": "digester"}, {"fclass": "residential"}], "relationships": ["intersects"], "num_result": 18}
+{"query_result": "Where does the archaeological intersect with track grade5?", "words": [{"fclass": "archaeological"}, {"fclass": "track grade5"}], "relationships": ["intersects"], "num_result": 10}
+{"query_result": "Where is detached intersects with vending any?", "words": [{"fclass": "detached"}, {"fclass": "vending any"}], "relationships": ["intersects"], "num_result": 1}
+{"query_result": "Where is tower intersects with commercial", "words": [{"fclass": "tower"}, {"fclass": "commercial"}], "relationships": ["intersects"], "num_result": 13}
+{"query_result": "Can you tell me where the footway intersects with mallway?", "words": [{"fclass": "footway"}, {"fclass": "mall"}], "relationships": ["intersects"], "num_result": 262}
+{"query_result": "Where does the secondary intersect with the tram?", "words": [{"fclass": "secondary"}, {"fclass": "tram"}], "relationships": ["intersects"], "num_result": 281}
+{"query_result": "Where is sports shop intersects with retail?", "words": [{"fclass": "sports shop"}, {"fclass": "retail"}], "relationships": ["intersects"], "num_result": 56}
+{"query_result": "Where does the river intersects with stream?", "words": [{"fclass": "river"}, {"fclass": "stream"}], "relationships": ["intersects"], "num_result": 603}
+{"query_result": "Where is kiosk intersects with waste basket?", "words": [{"fclass": "kiosk"}, {"fclass": "waste basket"}], "relationships": ["intersects"], "num_result": 1}
+{"query_result": "Where is primary link intersects with trunk link?", "words": [{"fclass": "primary link"}, {"fclass": "trunk link"}], "relationships": ["intersects"], "num_result": 4}
+{"query_result": "Where is unclassified intersects with castle?", "words": [{"fclass": "unclassified"}, {"fclass": "castle"}], "relationships": ["intersects"], "num_result": 7}
+{"query_result": "Where is parking intersects with unclassified?", "words": [{"fclass": "parking"}, {"fclass": "unclassified"}], "relationships": ["intersects"], "num_result": 311}
+{"query_result": "Where does the general intersect with residential?", "words": [{"fclass": "general"}, {"fclass": "residential"}], "relationships": ["intersects"], "num_result": 18}
+{"query_result": "Where does the river intersect with the unknown?", "words": [{"fclass": "river"}, {"fclass": "unknown"}], "relationships": ["intersects"], "num_result": 2}
+{"query_result": "Where is secondary link intersects with subway?", "words": [{"fclass": "secondary link"}, {"fclass": "subway"}], "relationships": ["intersects"], "num_result": 7}
+{"query_result": "Can you locate the recycling glass within the pitch?", "words": [{"fclass": "recycling glass"}, {"fclass": "pitch"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me a fast food within a parking multistorey?", "words": [{"fclass": "fast food"}, {"fclass": "parking multistorey"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me a waste basket within a parking multistorey?", "words": [{"fclass": "waste basket"}, {"fclass": "parking multistorey"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me water within a hotel?", "words": [{"fclass": "water"}, {"fclass": "hotel"}], "relationships": ["in"], "num_result": 3}
+{"query_result": "Can you find me waste basket within a community centre?", "words": [{"fclass": "waste basket"}, {"fclass": "community centre"}], "relationships": ["in"], "num_result": 7}
+{"query_result": "Can you find me substation within industrial?", "words": [{"fclass": "substation"}, {"fclass": "industrial"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find camera surveillance within suburb?", "words": [{"fclass": "camera surveillance"}, {"fclass": "suburb"}], "relationships": ["in"], "num_result": 9}
+{"query_result": "Can you find me service in car rental.", "words": [{"fclass": "service"}, {"fclass": "car rental"}], "relationships": ["in"], "num_result": 3}
+{"query_result": "Can you find me substation within a commercial?", "words": [{"fclass": "substation"}, {"fclass": "commercial"}], "relationships": ["in"], "num_result": 4}
+{"query_result": "Can you find me castle in farmland.", "words": [{"fclass": "castle"}, {"fclass": "farmland"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me a wayside cross within a graveyard?", "words": [{"fclass": "wayside cross"}, {"fclass": "graveyard"}], "relationships": ["in"], "num_result": 46}
+{"query_result": "Can you find me castle within museum?", "words": [{"fclass": "castle"}, {"fclass": "museum"}], "relationships": ["in"], "num_result": 2}
+{"query_result": "Can you find me pitch in a park.", "words": [{"fclass": "pitch"}, {"fclass": "park"}], "relationships": ["in"], "num_result": 973}
+{"query_result": "Can you find me parking in town.", "words": [{"fclass": "parking"}, {"fclass": "town"}], "relationships": ["in"], "num_result": 48}
+{"query_result": "Can you locate the kindergarten within the recreation ground?", "words": [{"fclass": "kindergarten"}, {"fclass": "recreation ground"}], "relationships": ["in"], "num_result": 7}
+{"query_result": "Where are clothes within car dealership?", "words": [{"fclass": "clothes"}, {"fclass": "car dealership"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me christian protestant in hospital", "words": [{"fclass": "christian protestant"}, {"fclass": "hospital"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me wastewater plant within grass?", "words": [{"fclass": "wastewater plant"}, {"fclass": "grass"}], "relationships": ["in"], "num_result": 3}
+{"query_result": "Can you find a sports centre within a suburb?", "words": [{"fclass": "sports centre"}, {"fclass": "suburb"}], "relationships": ["in"], "num_result": 5}
+{"query_result": "Can you find bench within theatre?", "words": [{"fclass": "bench"}, {"fclass": "theatre"}], "relationships": ["in"], "num_result": 3}
+{"query_result": "Can you find me a prefabricated within a locality?", "words": [{"fclass": "prefabricated"}, {"fclass": "locality"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Where are tree within water?", "words": [{"fclass": "tree"}, {"fclass": "water"}], "relationships": ["in"], "num_result": 36}
+{"query_result": "Can you find me waterfall within locality?", "words": [{"fclass": "waterfall"}, {"fclass": "locality"}], "relationships": ["in"], "num_result": 2}
+{"query_result": "Can you find a clothes within a camera surveillance?", "words": [{"fclass": "clothes"}, {"fclass": "camera surveillance"}], "relationships": ["in"], "num_result": 1}
+{"query_result": "Can you find me parking bicycle within hotel", "words": [{"fclass": "parking bicycle"}, {"fclass": "hotel"}], "relationships": ["in"], "num_result": 2}
+{"query_result": "I would like to find a clinic with a buffer zone of 500m around a recycling glass.", "words": [{"fclass": "clinic"}, {"fclass": "recycling glass"}], "relationships": ["buffer"], "num_result": 67}
+{"query_result": "I want to know recycling metal around scrub in 500m.", "words": [{"fclass": "recycling metal"}, {"fclass": "scrub"}], "relationships": ["buffer"], "num_result": 6}
+{"query_result": "I would like to find a camera surveillance with a buffer zone of 500m around a retail.", "words": [{"fclass": "camera surveillance"}, {"fclass": "retail"}], "relationships": ["buffer"], "num_result": 1578}
+{"query_result": "Are there any fast foods within 500m of the service?", "words": [{"fclass": "fast food"}, {"fclass": "service"}], "relationships": ["buffer"], "num_result": 1754}
+{"query_result": "I want to know miniature railway around dentist within 500m.", "words": [{"fclass": "miniature railway"}, {"fclass": "dentist"}], "relationships": ["buffer"], "num_result": 1}
+{"query_result": "I need to find rail within 500m of florist.", "words": [{"fclass": "rail"}, {"fclass": "florist"}], "relationships": ["buffer"], "num_result": 1979}
+{"query_result": "I would like to find a attraction with a buffer zone of 500m around a village.", "words": [{"fclass": "attraction"}, {"fclass": "village"}], "relationships": ["buffer"], "num_result": 126}
+{"query_result": "I want to know memorials around streams in 500m.", "words": [{"fclass": "memorial"}, {"fclass": "stream"}], "relationships": ["buffer"], "num_result": 1065}
+{"query_result": "Can you show me the location of camp sites around clothes within 500m?", "words": [{"fclass": "camp site"}, {"fclass": "clothes"}], "relationships": ["buffer"], "num_result": 10}
+{"query_result": "I want to find where the unclassified is around the fast food within 500m.", "words": [{"fclass": "unclassified"}, {"fclass": "fast food"}], "relationships": ["buffer"], "num_result": 2765}
+{"query_result": "I want to know wayside shrines around fast foods in 500m.", "words": [{"fclass": "wayside shrine"}, {"fclass": "fast food"}], "relationships": ["buffer"], "num_result": 154}
+{"query_result": "Are there any bookshops within 500m of the sports hall?", "words": [{"fclass": "bookshop"}, {"fclass": "sports hall"}], "relationships": ["buffer"], "num_result": 22}
+{"query_result": "I want to find where the sight is around the college within 500m.", "words": [{"fclass": "sight"}, {"fclass": "college"}], "relationships": ["buffer"], "num_result": 2}
+{"query_result": "I want to know cinema around farmland in 500m.", "words": [{"fclass": "cinema"}, {"fclass": "farmland"}], "relationships": ["buffer"], "num_result": 38}
+{"query_result": "Could you tell me about the village around the bridge in 500m?", "words": [{"fclass": "village"}, {"fclass": "bridge"}], "relationships": ["buffer"], "num_result": 8}
+{"query_result": "I want to know silo around florist in 500m.", "words": [{"fclass": "silo"}, {"fclass": "florist"}], "relationships": ["buffer"], "num_result": 7}
+{"query_result": "I want to know e around footway in 500m.", "words": [{"fclass": "e"}, {"fclass": "footway"}], "relationships": ["buffer"], "num_result": 3}
+{"query_result": "Are there any clothes within 500m of the tertiary?", "words": [{"fclass": "clothes"}, {"fclass": "tertiary"}], "relationships": ["buffer"], "num_result": 1476}
+{"query_result": "I am looking for a rail around a greengrocer in 500m buffer.", "words": [{"fclass": "rail"}, {"fclass": "greengrocer"}], "relationships": ["buffer"], "num_result": 1435}
+{"query_result": "I want to know dam around jeweller within 500m.", "words": [{"fclass": "dam"}, {"fclass": "jeweller"}], "relationships": ["buffer"], "num_result": 1}
+{"query_result": "I want to find where the convenience is around the school within 500m.", "words": [{"fclass": "convenience"}, {"fclass": "school"}], "relationships": ["buffer"], "num_result": 379}
+{"query_result": "I want to know fire station around parking multistorey in 500m.", "words": [{"fclass": "fire station"}, {"fclass": "parking multistorey"}], "relationships": ["buffer"], "num_result": 75}
+{"query_result": "I want to know track grade3 around courthouse in 500m.", "words": [{"fclass": "track grade3"}, {"fclass": "courthouse"}], "relationships": ["buffer"], "num_result": 9}
+{"query_result": "I want to know the hotel around river within 500m.", "words": [{"fclass": "hotel"}, {"fclass": "river"}], "relationships": ["buffer"], "num_result": 676}
+{"query_result": "I want to know if there is a graveyard around a secondary link in 500 meters.", "words": [{"fclass": "graveyard"}, {"fclass": "secondary link"}], "relationships": ["buffer"], "num_result": 57}

@@ -1,0 +1,15 @@
+shapely==2.0.7
+tqdm==4.67.1
+geopandas==0.13.2
+geopy==2.4.1
+openai==1.63.0
+chromadb==0.5.0
+python-dotenv==1.0.1
+flask==3.1.0
+pandas==2.2.3
+spacy==3.8.3
+user_agents==2.2.0
+flask_socketio==5.5.1
+numpy==1.24.3
+r5py==1.0.0
+neo4j==5.20.0

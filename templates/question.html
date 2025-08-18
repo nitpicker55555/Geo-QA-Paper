@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate Question Divs</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    .container {
+      width: 100%;
+      height: 100vh;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      position: relative;
+    }
+    .section {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100vh;
+    }
+    .question {
+      display: flex;
+      align-items: center;
+      width: 80%;
+      margin: 10px 0;
+    }
+    .question label {
+      flex: 1;
+      text-align: right;
+      padding-right: 10px;
+    }
+    .question input[type="radio"] {
+      margin: 0 5px;
+    }
+    .question span {
+      flex: 1;
+      text-align: left;
+      padding-left: 10px;
+    }
+    .slider {
+      position: fixed;
+      top: 10px;
+      left: 20px;
+      right: 20px;
+      height: 20px;
+      background-color: #f0f0f0;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .slider .emoji {
+      position: absolute;
+      top: -5px;
+      left: 0;
+      font-size: 24px;
+      transition: left 0.3s;
+    }
+    .submit-button {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100px;
+    }
+    .submit-button button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .textarea-container {
+      width: 80%;
+      margin: 20px auto;
+    }
+    .textarea-container textarea {
+      width: 100%;
+      height: 100px;
+      padding: 10px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="slider">
+  <div class="emoji">😊</div>
+</div>
+
+<form class="container" id="questionsContainer" action="{{ url_for('submit_qu') }}" method="post">
+  <!-- Questions will be generated here by JavaScript -->
+  <input type="hidden" name="start_time" id="start_time">
+
+</form>
+<script>
+  function createQuestionDiv(beforeLabel, afterLabel, name) {
+    const div = document.createElement('div');
+    div.className = 'question';
+
+    const label = document.createElement('label');
+    label.textContent = beforeLabel;
+    div.appendChild(label);
+
+    for (let i = 1; i <= 7; i++) {
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.required = true; // Make each radio input required
+      input.name = name;
+      input.value = i;
+      if (i === 1) {
+        input.required = true;
+      }
+      div.appendChild(input);
+      div.appendChild(document.createTextNode(i));
+    }
+
+    const endLabel = document.createElement('span');
+    endLabel.textContent = afterLabel;
+    div.appendChild(endLabel);
+
+    return div;
+  }
+
+  function generateSections(questions) {
+    const container = document.getElementById('questionsContainer');
+    let section;
+    questions.forEach((q, index) => {
+      if (index % 4 === 0) {
+        section = document.createElement('div');
+        section.className = 'section';
+        container.appendChild(section);
+      }
+      section.appendChild(createQuestionDiv(q.beforeLabel, q.afterLabel, q.name));
+    });
+    const submitButtonContainer = document.createElement('div');
+    submitButtonContainer.className = 'submit-button';
+    const submitButton = document.createElement('button');
+    submitButton.type = 'submit';
+    submitButton.textContent = 'Submit';
+    submitButton.onclick = validateForm; // Add click event handler
+    submitButtonContainer.appendChild(submitButton);
+    container.appendChild(submitButtonContainer);
+
+    // Add submit button at the end
+    const textareaContainer = document.createElement('div');
+    textareaContainer.className = 'textarea-container';
+    const textareaLabel = document.createElement('label');
+    textareaLabel.setAttribute('for', 'comments');
+    textareaLabel.textContent = 'Comments:';
+    const textarea = document.createElement('textarea');
+    textarea.id = 'comments';
+    textarea.name = 'comments';
+    textarea.placeholder = 'Enter your comments here 😊 Your email address can also leave here';
+    textareaContainer.appendChild(textareaLabel);
+    textareaContainer.appendChild(textarea);
+    container.appendChild(textareaContainer);
+
+    // Add submit button at the end
+
+  }
+  function validateForm() {
+    const questions = document.querySelectorAll('.question');
+    let allFilled = true;
+    let firstUnfilledQuestion = null;
+
+    questions.forEach((question, index) => {
+      const inputs = question.querySelectorAll('input[type="radio"]');
+      const isChecked = Array.from(inputs).some(input => input.checked);
+      if (!isChecked) {
+        allFilled = false;
+        if (!firstUnfilledQuestion) {
+          firstUnfilledQuestion = index + 1;
+        }
+      }
+    });
+
+    if (!allFilled) {
+      alert(`Question ${firstUnfilledQuestion} has not been answered. Please fill it out.`);
+    } else {
+      showConfirmationDialog();
+    }
+  }
+
+  function showConfirmationDialog() {
+    const confirmation = confirm("Please confirm that you agree to our experiment terms:\n\nWe will collect the dialogue information during the experiment (including system responses, user questions, and time), the current machine's IP address, as well as the content of the questionnaire and the filling time.\n\nDo you agree?");
+    if (confirmation) {
+      document.getElementById('questionsContainer').submit();
+    } else {
+      alert("Submission unsuccessful. Please agree to the terms to submit the questionnaire.");
+    }
+  }
+
+
+  const questions = [
+    { beforeLabel: '1. annoying', afterLabel: 'enjoyable', name: 'annoying_enjoyable' },
+    { beforeLabel: '2. not understandable', afterLabel: 'understandable', name: 'not_understandable_understandable' },
+    { beforeLabel: '3. creative', afterLabel: 'dull', name: 'creative_dull' },
+    { beforeLabel: '4. easy to learn', afterLabel: 'difficult to learn', name: 'easy_to_learn_difficult_to_learn' },
+    { beforeLabel: '5. valuable', afterLabel: 'inferior', name: 'valuable_inferior' },
+    { beforeLabel: '6. boring', afterLabel: 'exciting', name: 'boring_exciting' },
+    { beforeLabel: '7. not interesting', afterLabel: 'interesting', name: 'not_interesting_interesting' },
+    { beforeLabel: '8. unpredictable', afterLabel: 'predictable', name: 'unpredictable_predictable' },
+    { beforeLabel: '9. fast', afterLabel: 'slow', name: 'fast_slow' },
+    { beforeLabel: '10. inventive', afterLabel: 'conventional', name: 'inventive_conventional' },
+    { beforeLabel: '11. obstructive', afterLabel: 'supportive', name: 'obstructive_supportive' },
+    { beforeLabel: '12. good', afterLabel: 'bad', name: 'good_bad' },
+    { beforeLabel: '13. complicated', afterLabel: 'easy', name: 'complicated_easy' },
+    { beforeLabel: '14. unlikable', afterLabel: 'pleasing', name: 'unlikable_pleasing' },
+    { beforeLabel: '15. usual', afterLabel: 'leading edge', name: 'usual_leading_edge' },
+    { beforeLabel: '16. unpleasant', afterLabel: 'pleasant', name: 'unpleasant_pleasant' },
+    { beforeLabel: '17. secure', afterLabel: 'not secure', name: 'secure_not_secure' },
+    { beforeLabel: '18. motivating', afterLabel: 'demotivating', name: 'motivating_demotivating' },
+    { beforeLabel: '19. meets expectations', afterLabel: 'does not meet expectations', name: 'meets_expectations_does_not_meet_expectations' },
+    { beforeLabel: '20. inefficient', afterLabel: 'efficient', name: 'inefficient_efficient' },
+    { beforeLabel: '21. clear', afterLabel: 'confusing', name: 'clear_confusing' },
+    { beforeLabel: '22. impractical', afterLabel: 'practical', name: 'impractical_practical' },
+    { beforeLabel: '23. organized', afterLabel: 'cluttered', name: 'organized_cluttered' },
+    { beforeLabel: '24. attractive', afterLabel: 'unattractive', name: 'attractive_unattractive' },
+    { beforeLabel: '25. friendly', afterLabel: 'unfriendly', name: 'friendly_unfriendly' },
+    { beforeLabel: '26. conservative', afterLabel: 'innovative', name: 'conservative_innovative' },
+    { beforeLabel: '27. Have knowledge of Gis', afterLabel: 'No knowledge of Gis', name: 'knowledge_gis' },
+    { beforeLabel: '28. Have knowledge of SQL', afterLabel: 'no knowledge of SQL', name: 'knowledge_sql' },
+  ];
+
+  generateSections(questions);
+
+  const container = document.querySelector('.container');
+  const emoji = document.querySelector('.emoji');
+  const slider = document.querySelector('.slider');
+  const sliderWidth = slider.clientWidth - 40; // Padding on both sides
+
+  container.addEventListener('scroll', () => {
+    const maxScrollTop = container.scrollHeight - container.clientHeight;
+    const scrollTop = container.scrollTop;
+    const scrollPercentage = scrollTop / maxScrollTop;
+    const emojiPosition = scrollPercentage * sliderWidth;
+    emoji.style.left = `${emojiPosition}px`;
+
+  });
+  document.getElementById('start_time').value = Date.now();
+  console.log(document.getElementById('start_time').value)
+</script>
+
+</body>
+</html>

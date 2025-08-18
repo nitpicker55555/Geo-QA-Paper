@@ -1,0 +1,294 @@
+.container {
+    text-align: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.code-interpreter {
+    font-style: italic;
+    font-weight: bold;
+    font-size: 50px;
+}
+
+.block-button {
+    display: inline-block;
+    margin: 10px;
+    padding: 10px 20px;
+    background-color: grey;
+    color: white;
+    border: none;
+    border-radius: 15px;
+    opacity: 0.7;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 1s;
+}
+
+.block-button:hover {
+    background-color: black;
+    opacity: 1.0;
+}
+
+.leaflet-control-custom {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    left: 10px;
+
+    /*border: 1px solid #fff;*/
+    backdrop-filter: blur(10px);
+    width: 150px;
+    overflow: hidden;
+    transition: top 0.3s ease-in-out;
+    position: absolute;
+    top: 50px; /* Initial top position below toggle */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Add shadow */
+    /*height: calc(66.67vh - 100px);*/
+    z-index: 888;
+    overflow-y: auto;
+}
+.leaflet-control-toggle {
+    top: 10px; /* 距离窗口顶部的距离 */
+    left: 10px;
+    padding: 5px;
+    border: none;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    backdrop-filter: blur(10px);
+    cursor: pointer;
+    width: 150px; /* Same width as controls */
+    text-align: center;
+    position: absolute;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Add shadow */
+
+}
+.toggle_top{
+    top: 10px; /* Position of toggle button */
+    left: 10px;
+    width: 200px; /* Same width as controls */
+    position: absolute;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Add shadow */
+
+}
+.toggle-btn {
+    margin: 5px 0;
+    padding: 5px;
+    width: calc(100% - 10px);
+    border: none;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(5px);
+    cursor: pointer;
+    color: white;
+    font-size: small;
+
+}
+.description {
+    font-size: 14px;
+    letter-spacing: 6px; /* 增加字间距 */
+    display: block; /* 或者使用flex等其他布局方式来控制宽度 */
+    /* 设定宽度以尝试与上方文本宽度匹配 */
+    max-width: 600px; /* 假设上方文本的最大宽度为600px */
+    margin: 10px auto; /* 居中显示 */
+}
+.red-button {
+    background-color: red;
+}
+.leaflet-control-layers{
+    display: none;
+}
+.custom-rect {
+    display: block;
+    border-radius: 10px;
+    padding: 5px 10px;
+    font-style: italic;
+    background: linear-gradient(135deg, #1e90ff, #87cefa);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+
+    position: relative;
+    margin-bottom: 10px; /* 调整间距 */
+}
+
+.plan-label {
+    display: inline-block;
+    background-color: gray;
+    color: white;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-right: 5px;
+    font-size: 12px;
+    position: absolute;
+    top: -10px;
+    left: -10px;
+}
+.plan-label-map {
+    display: inline-block;
+    background-color: green;
+    color: white;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: 5px;
+    font-size: 12px;
+    position: absolute;
+    top:-10px;
+    left: 25px;
+}
+.plan-label-map_tip {
+    /*display: inline-block;*/
+    background-color: green;
+    color: white;
+    /*padding: 2px 5px;*/
+    border-radius: 3px;
+    /*margin-left: 5px;*/
+    font-size: 12px;
+    /*position: absolute;*/
+    /*top:-10px;*/
+    /*left: 25px;*/
+}
+.map-button {
+    display: block;
+    border-radius: 10px;
+    padding: 5px 10px;
+    background: linear-gradient(135deg, #800080, #dda0dd);
+    color: white;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    margin-bottom: 10px; /* 调整间距 */
+}
+#map-container {
+    position: absolute; /* 或者使用 position: fixed; 根据需要 */
+    bottom: 100px; /* 距离窗口底部100px */
+    /*left: 20px; !* 距离窗口左边缘50px *!*/
+    right: 20px; /* 距离窗口右边缘50px */
+    width: calc(50% - 35px); /* 宽度为窗口一半减去两边间距和分隔线的宽度 */
+    height: calc(100vh - 150px); /* 高度为窗口高度减去顶部和底部间距 */
+    background-color: #f0f0f0; /* 背景色，仅作为示例 */
+    visibility : hidden;
+    font-size: medium;
+
+}
+
+#map-container_introduction {
+    position: absolute; /* 或者使用 position: fixed; 根据需要 */
+    bottom: 100px; /* 距离窗口底部100px */
+    /*left: 20px; !* 距离窗口左边缘50px *!*/
+    right: 20px; /* 距离窗口右边缘50px */
+    width: calc(50% - 35px); /* 宽度为窗口一半减去两边间距和分隔线的宽度 */
+    height: calc(100vh - 150px); /* 高度为窗口高度减去顶部和底部间距 */
+    background-color: #f0f0f0; /* 背景色，仅作为示例 */
+
+    font-size: medium;
+
+}
+#chatWindow {
+
+    border: 1px solid #ccc;
+    /*padding: 10px;*/
+    overflow-y: auto; /* 内容超出时在元素内部显示滚动条 */
+    position: absolute; /* 或者使用 position: fixed; 根据需要 */
+    bottom: 100px; /* 距离窗口底部100px */
+    left: 20px; /* 距离窗口左边缘50px */
+    /*right: 20px; !* 距离窗口右边缘50px *!*/
+    width: calc(50% - 35px); /* 宽度为窗口一半减去两边间距和分隔线的宽度 */
+    height: calc(100vh - 150px); /* 高度为窗口高度减去顶部和底部间距 */
+    /*margin: -30px 20px 5px; !* 上、左右、下的外边距 *!*/
+    /*width: calc(100% - 40px); !* 调整宽度以考虑左右的边距 *!*/
+    /*max-height: calc(50vh); !* 最大高度以避免窗口滚动条 *!*/
+
+
+}
+@media screen and (min-width: 1200px) {
+    #map-container {
+        width: calc(50% - 35px); /* 宽度为窗口一半减去两边间距和分隔线的宽度 */
+    }
+
+    #chatWindow {
+        width: calc(50% - 35px); /* 宽度为窗口一半减去两边间距和分隔线的宽度 */
+    }
+}
+.night-mode {
+    background-color: black;
+    color: white;
+}
+
+/* 你可能还需要为特定元素定义夜间模式的样式 */
+.night-mode p, .night-mode h1, .night-mode h2, .night-mode h3 {
+    color: white; /* 确保所有文字都是白色 */
+}
+.night-mode button {
+    background-color: #757575; /* 灰色背景 */
+    color: white; /* 白色文字 */
+    /*border: none; !* 可选，移除边框 *!*/
+}
+
+/* 如果你有使用特定类名的按钮，也可以相应地为它们定义样式 */
+.night-mode .your-button-class {
+    background-color: #757575; /* 灰色背景 */
+    color: white; /* 白色文字 */
+}
+.input-button-container {
+    position: absolute; /* 使用固定定位 */
+    bottom: 20px; /* 距离窗口底部20px */
+    left: 20px; /* 距离窗口左边50px */
+    right: 20px; /* 距离窗口右边50px */
+
+    display: flex; /* 使用flex布局 */
+    justify-content: space-between; /* 使输入框和按钮分布在两端 */
+    align-items: center; /* 垂直居中对齐 */
+}
+
+#upload-btn,#inputField, #confirmButton {
+    height: 40px; /* 设置输入框和按钮的高度 */
+    line-height: 40px; /* 设置行高以垂直居中文本 */
+}
+
+#inputField {
+    /*position: absolute;*/
+    width: 80%; /* 输入框占据大部分空间 */
+    margin-right: 5px; /* 和按钮之间留出一些间隔 */
+    margin-left: 5px; /* 和按钮之间留出一些间隔 */
+}
+
+#confirmButton {
+    width: 30%; /* 按钮占据剩余空间 */
+}
+
+
+.fullscreen {
+    width: 100% !important;
+    height: 100vh !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 999;
+    margin: 0 !important;    /* No margin */
+    padding: 0 !important;   /* No padding */
+}
+.custom-cluster-icon {
+    border-radius: 50%;
+    color: white;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+    font-size: 14px;
+}
+.custom-cluster-icon_tip {
+    border-radius: 50%;
+    color: white;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    position: absolute;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+    font-size: 14px;
+}
+.leaflet-control-attribution {
+    display: none !important;
+}

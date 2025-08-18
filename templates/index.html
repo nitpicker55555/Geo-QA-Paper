@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-QA</title>
+    <script src="../static/js/jquery-2.1.1.js"></script>
+    <script src="../static/js/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="../static/css/bootstrap.min.css">
+    <link rel="stylesheet" href="../static/font-awesome/css/font-awesome.min.css">
+    <link rel="stylesheet" href="../static/css/github-dark-dimmed.min.css">
+    <link rel="stylesheet" href="../static/css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- 引入 wellknown 库来解析 WKT -->
+    <script src="https://unpkg.com/wellknown/wellknown.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <!--<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />-->
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <link rel="stylesheet" href="../static/css/common.css">
+    <link rel="stylesheet" href="../static/css/teach.css">
+    <link rel="stylesheet" href="../static/css/firework.css">
+    <script  src="../static/js/teach.js"></script>
+    <script src="../static/js/map_container.js"></script>
+    <script src="../static/js/firework.js"></script>
+    <style>
+
+    </style>
+
+
+</head>
+<body>
+<!--    <div id="markdownContainer"></div>-->
+<div class="content-container">
+    <div id="myConfettiContainer">
+        <!-- 这里是放置firework的容器 -->
+    </div>
+</div>
+<p class="lead text-center">
+    <a  style="display: inline-block;" class="lead text-center" onclick="location.href='introduction'" style="color:red;">      Introduction    |       </a>
+    <a style="display: inline-block; cursor: pointer;" class="lead text-center" onclick="teach_assistant(tips)">Tutorial |</a>
+    <a style="display: inline-block;"  class="lead text-center" id="my-p" style="color:blue;"> </a>
+    <button id="nightModeToggle">🌙</button>
+    <br>
+
+</p>
+
+<input type="file" id="file-input" style="display: none;" />
+<div id="chatWindow" style="display: none"></div>
+<div class="container" id="title">
+    <span class="code-interpreter">Geo-QA</span>
+    <div class="description"></div>
+    <button class="rectangle-btn"  onclick="showNumber('Show buildings 100m around forest in Munich Maxvorstadt')">Show buildings 100m around forest</button>
+    <br>
+    <br>
+    <button class="rectangle-btn"  onclick="showNumber('Show buildings in greenery in Munich Maxvorstadt')">Show buildings in greenery</button>
+    <br>
+    <br>
+    <button class="rectangle-btn"  onclick="showNumber('Where is good for agriculture in Munich')">Where is good for agriculture</button>
+    <br>
+    <br>
+    <button class="rectangle-btn"  onclick="showNumber('Park which has buildings inside in Munich Maxvorstadt')">Park which has buildings inside</button>
+    <br>
+    <br>
+    <button class="rectangle-btn"  onclick="showNumber('Where are the rivers in Munich')">Where are the rivers</button>
+    <!--    <button class="rectangle-btn"  onclick="showNumber('分析我上传的文件')">Upload your ttl file</button>-->
+    <br>
+    <br>
+    <button class="rectangle-btn" id="auto-test-btn" onclick="startAutoTest()">🧪 Start Auto Test</button>
+</div>
+<!--<button onclick="location.href='/question'">Go to Questions</button>-->
+<div class="input-button-container">
+    <!--    <input type="button" id="upload-btn" class="your-button-class" value="Upload" onclick="document.getElementById('file-input').click();" />-->
+
+    <input type="button" id="upload-btn" class="your-button-class" value="Upload" onclick="document.getElementById('file-input-upload').click();" />
+    <textarea type="text" id="inputField" class="your-button-class" placeholder="Input question..."></textarea>
+    <button id="confirmButton" class="your-button-class">submit</button>
+    <button id="reasoning_mode" class="your-button-class">Reasoning</button>
+    <button id="debug_mode" class="your-button-class">debug</button>
+</div>
+<div id="map-container" ></div>
+<div id="overlay" class="overlay"></div>
+
+<!-- Tooltip -->
+<div id="tooltip" class="tooltip">
+    <span id="tooltip-text"></span>
+    <button id="tooltip-button">Got it!</button>
+</div>
+<div id="centeredTooltip" class="centered-tooltip">
+    <span id="tooltipText"></span>
+    <div>
+        <button id="tooltipButton">Got it!</button>
+    </div>
+</div>
+<button id="stop-tips" style="display:none;">Stop Tips</button>
+
+
+<input type="file" id="file-input-upload" style="display: none;" onchange="uploadFile(event)" />
+
+<!-- Modal Window -->
+<div class="overlay_upload" id="overlay_upload"></div>
+<div class="modal" id="modal">
+    <h3 id="file-name">Uploaded File: <span id="file-name-text"></span></h3>
+    <button class="lightblue-button" onclick="fetchFileData()">Using LLM Fill</button>
+    <label for="table">Table:</label>
+    <input type="text" id="table" name="table">
+    <label for="category">Category:</label>
+    <input type="text" id="category" name="category">
+
+    <label for="name">Name:</label>
+    <input type="text" id="name" name="name">
+    <label for="geom">Geom:</label>
+    <input type="text" id="geom" name="geom">
+    <label for="epsg">EPSG:</label>
+    <input type="text" id="epsg" name="geom">
+    <button class="green-button" onclick="submitForm()">OK</button>
+</div>
+
+<!-- Loading Spinner -->
+<div class="spinner" id="spinner"></div>
+
+<!-- Test Progress Display -->
+<div id="test-progress" style="display: none; position: fixed; top: 20px; right: 20px; background: rgba(0,0,0,0.8); color: white; padding: 15px; border-radius: 10px; z-index: 10000;">
+    <div id="test-status">Loading test data...</div>
+    <div id="test-counter" style="font-size: 18px; font-weight: bold; margin-top: 5px;">0/0</div>
+    <button id="stop-test-btn" onclick="stopAutoTest()" style="margin-top: 10px; background: #ff4444; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Stop Test</button>
+</div>
+
+<script>
+    const normal_prompt = `
+    You have following tools available to answer user queries, please only write python code:
+I have three kinds of data:buildings(polygon data), area(polygon data), point(poi data), roads(lines data), soil(polygon data).
+1.set_bounding_box(address):
+Input:An address which you want search limited in.
+Output:None, it establishes a global setting that restricts future searches to the defined region.
+Usage:By providing an address, you can limit the scope of subsequent searches to a specific area. This function does not produce any output, but it establishes a global setting that restricts future searches to the defined region. For example, if you want to find buildings in Munich, you should first set the bounding box to Munich by using set_bounding_box("Munich").
+Notice:Please include the modification words like east/larger/half part/ of query in the address sent to set_bounding_box
+Notice:If user wants to search in all area, call set_bounding_box(''). Normally, User will put boundingbox information in last
+Notice:Users often include bounding box information after the query. For example, in "I want to know xxx in Munich," "Munich" serves as the bounding box. However, note that the bounding box is typically set to cover a larger area. If the user asks about a specific street, do not set it as the bounding box. If you're not sure whether the query wants a bounding box, then don't set one.
+
+2.id_list_of_entity(description of entity):
+Input: Description of the entity, including adj or prepositional phrase like good for commercial,good for planting potatoes, or just entity word like 'Technische Universität München'. Make sure to make plural words singular when you input.
+Output: A list of IDs (id_list) corresponding to the described entity.
+Usage: Use this function to obtain an id_list which will be used as input in the following functions.
+Notice: Some times the description may have complex description like:"I want to know area which named see and is water", input the whole description into function. "not good for" should input as entity description but not geo relation.
+Notice: If the user requests a strict or lenient search, please pass this adjective to function along as well.
+Notice: Do not input geographical relation like 'in/on/under/in 200m of/close' into this function, it is not description of entity.
+
+3.geo_filter('their geo_relation',id_list_subject, id_list_object):
+Input: Two id_lists (one as subject and one as object) and their corresponding geographical relationship.
+Output: A dict contains 'subject','object' two keys as filtered id_lists based on the geographical relationship.
+Usage: This function is used only when the user wants to query multiple entities that are geographically related. Common geographical relationships are like: 'in/on/under/in 200m of/close/contains...' and also support antonym expression, just add not in start: like not in 500m of
+Notice: id_list_subject should be the subject of the geo_relation, in example: soil under the buildings, soil is subject; buildings around water, buildings are subject.
+Notice: Get the filtered subject/object id_list: result['subject'],result['object']
+
+4.add_or_subtract_entities(id_list1,id_list2,operation)
+Input: id_list1(id_list operated as subject),id_list2(id_list operated as object),operation (str): The operation to perform ('add' or 'subtract').
+Output: add operation (Combine entities from both id_list), subtract operation (Retain entities that are in id_list1 but not in id_list2)
+
+5.area_filter(id_list, num):
+Notice: only use it when user wants to filter result by area.
+Input: An id_list and a number representing either the maximum or minimum count.
+Output: An id_list filtered by area.
+Usage: Use this function only when the user explicitly asks for the entities with the largest or smallest areas. For example, input 3 for the largest three, and -3 for the smallest three.
+
+6.traffic_navigation(start_location,end_location,middle_locations_list=[]):
+start_location,end_location is the variable of id_list user wants to set as start point and end point.
+middle_locations_list is a list of id_list the user wants to pass through along the way, in the order the user wishes to visit them. This can be set as empty or list with any length.
+Notice: please also assign variable for this function.
+
+7.id_list_explain(variable name, category to explain(name or type or area or attributes)):
+Input: id_list generated by function 'id_list_of_entity' or 'geo_filter' or 'area_filter'
+Output: A dictionary containing the count of each type/name occurrence or area size（unit is square meters）.
+Usage: Use this function to provide explanations based on user queries.
+
+Please always set an output variable for each function you called and write corresponding short code comments.
+Variable in history is available to call.
+If user ask you to draw a diagram, please always use the true variable in previous code to draw but not assume fake value. If you asked to draw multi graph at the same time, you need to use subplots to draw them on a single figure.
+ `;
+    let currentMode = "fast";
+
+    function clickButtonByXPath(xpath) {
+        const element = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (element) {
+            element.click();
+        } else {
+            console.log("Element not found for XPath: " + xpath);
+        }
+    }
+
+
+    // function uploadFile() {
+    const tips = [
+        {
+            text: text = '<strong style="font-size: 20px;">Let\'s start with an interesting example!😊</strong><br> Get bars around Isar river',
+
+            xpath: "//*[@id=\"inputField\"]",
+            command: function() {
+                const textarea = document.querySelector("textarea#inputField");
+                if (textarea) {
+                    textarea.value = "show me bars in 500m of Isar river in Munich";
+                } else {
+                    console.log("Textarea with id 'inputField' not found");
+                }
+                const submit_btn=document.getElementById('confirmButton')
+                submit_btn.click()
+
+                // change_overlay_zindex('high')
+            },
+            goal:async function() {
+
+                if (await waitForTrue(getVariableValue)){
+                    const colors = ["DodgerBlue", "OliveDrab", "Gold", "Pink", "SlateBlue", "LightBlue", "Violet", "PaleGreen", "SteelBlue", "SandyBrown", "Chocolate", "Crimson"];
+
+                    startConfetti(300,1,colors,2000);
+                    await showCenteredTooltip('<strong style="font-size: 20px;">Awesome!😎 You successfully communicated with the database!</strong>')
+                }
+                return true
+            },
+            button_name: "Click to search"
+        },
+        {
+            text: "<strong style=\"font-size: 20px;\">Look at these colorful buttons😯❓<br></strong>These represent reasoning procedure of system!😊",
+            xpath: "//*[@id=\"chatWindow\"]/div[2]",
+            command: function() {
+                console.log(process_status,'process_status')
+
+
+            },
+            goal: function() { return true; },
+            button_name: "I see"
+        }
+        ,{
+            text: "<strong style=\"font-size: 20px;\">😊<br>The purple 🟣 button with <span class=\"plan-label-map_tip\">Map</span> is clickable.<br> Clicking it will visualize this step</strong>",
+            xpath: "//*[@id=\"chatWindow\"]/div[2]/div/div[2]",
+            command: function() {
+
+            },
+            goal: function() { return true; },
+            button_name: "Next"
+        }
+
+        ,{
+            text: "<strong style=\"font-size: 20px;\">Excellent😊<br>These are the results returned by the system. You can click to open or collapse them.</strong>",
+            xpath: "//*[@id=\"chatWindow\"]/div[2]/div/details",
+            command: function() {
+
+            },
+            goal: function() { return true; },
+            button_name: "I see"
+        }
+        ,{
+            text: "<strong style=\"font-size: 20px;\">Let's look at our map visualization<br>🗺️</strong><br>",
+            xpath: "//*[@id=\"map-container\"]",
+
+            command: function() {
+                change_overlay_zindex('999')
+            },
+            goal: function() { return true; },
+            button_name: "Go on"
+        }
+
+        ,{
+            text: "<strong style=\"font-size: 20px;\">Each layer can be closed by clicking</strong><br>Region🗺️ means the area you want to limit result",
+            xpath: "//*[@id=\"map-container\"]/div[2]/div[1]/div/button[1]",
+
+
+            command: function() {
+
+            },
+            goal: function() { return true; },
+            button_name: "I see"
+        }
+        ,{
+            text: "<strong style=\"font-size: 20px;\">This represents each dataset💾</strong><br>You can click to close all layers of this database",
+            xpath: "//*[@id=\"map-container\"]/div[2]/div[1]/div/button[3]",
+
+
+            command: function() {
+
+            },
+            goal: function() { return true; },
+            button_name: "Go on"
+        }
+        ,{
+            text: "<strong style=\"font-size: 20px;\">This is a child data layer within a database</strong><br>Clicking it will show or hide this individual data layer.",
+            xpath: "//*[@id=\"map-container\"]/div[2]/div[1]/div/button[4]",
+
+
+            command: function() {
+
+            },
+            goal: function() { return true; },
+            button_name: "I see"
+        }
+        ,{
+            text: "<strong style=\"font-size: 20px;\">Excellent😊</strong><br>Click this to make map fullscreen",
+            xpath: "//*[@id=\"expandBtn\"]",
+
+            command: function() {
+                change_overlay_zindex('200')
+                clickButtonByXPath("//*[@id=\"expandBtn\"]")
+
+
+            },
+            goal: function() { return true; },
+            button_name: "Click"
+        }
+
+        ,{
+            text: "<strong style=\"font-size: 20px;\">Elements displayed on the map is clickable 🖱️!</strong><br>By clicking on an element, you can get information about it ℹ️",
+            xpath: "//*[contains(@class, 'leaflet-interactive')]",
+
+
+            command: function() {
+                change_overlay_zindex('2000')
+                clickButtonByXPath("//*[@id=\"expandBtn\"]")
+
+            },
+            goal: async function() {
+                if (await waitForTrue(getVariableValue)){
+                    const colors = ["DodgerBlue", "OliveDrab", "Gold", "Pink", "SlateBlue", "LightBlue", "Violet", "PaleGreen", "SteelBlue", "SandyBrown", "Chocolate", "Crimson"];
+
+                    startConfetti(300,1,colors,2500);
+                    await showCenteredTooltip('<strong style="font-size: 20px;">Wonderful!🎉😉</strong><br>You already know the basic elements！')
+
+                }
+                return true
+            },
+            button_name: "I see"
+        }
+        ,{
+            text: text = '<strong style="font-size: 20px;">Let\'s continue previous search!😊</strong><br> which bars also close to hospital?',
+
+            xpath: "//*[@id=\"inputField\"]",
+            command: function() {
+                const textarea = document.querySelector("textarea#inputField");
+                if (textarea) {
+                    textarea.value = 'Limit them to which also close to hospital in 200m';
+                } else {
+                    console.log("Textarea with id 'inputField' not found");
+                }
+                const submit_btn=document.getElementById('confirmButton')
+                submit_btn.click()
+                change_overlay_zindex('200')
+
+            },
+            goal:async function() {
+                return await waitForTrue(getVariableValue)
+            },
+            button_name: "Click to search"
+        }
+
+        ,{
+            text: "<strong style=\"font-size: 20px;\">We have easily followed up with further questions🌍🔍</strong><br>This is cluster of targets you searched",
+            xpath: "//div[contains(@class, 'leaflet-marker-icon custom-cluster leaflet-zoom-animated leaflet-interactive')]",
+
+
+            command: function() {
+                change_overlay_zindex('2000')
+
+            },
+            goal: function() { return true; },
+            button_name: "I see"
+        }
+
+        ,{
+            text: text = '<strong style="font-size: 20px;">Let\'s do a complex search!😊</strong><br> Like: farmlands on soil good for planting potatoes and around 2000m of universities in Freising',
+
+            xpath: "//*[@id=\"inputField\"]",
+            command: function() {
+                const textarea = document.querySelector("textarea#inputField");
+                if (textarea) {
+                    textarea.value = 'farmlands on soil good for planting potatoes and around 2000m of universities in Freising';
+                } else {
+                    console.log("Textarea with id 'inputField' not found");
+                }
+                const submit_btn=document.getElementById('confirmButton')
+                submit_btn.click()
+                change_overlay_zindex('200')
+
+            },
+            goal:async function() {
+                return await waitForTrue(getVariableValue)
+            },
+            button_name: "Click to search"
+        }
+
+        ,{
+            text: text = '<strong style="font-size: 20px;">Let\'s create a chart 📊</strong><br>Draw me an area distribution of these farmlands',
+
+            xpath: "//*[@id=\"inputField\"]",
+            command: function() {
+                const textarea = document.querySelector("textarea#inputField");
+                if (textarea) {
+                    textarea.value = 'draw me a area distribution of these farmlands';
+                } else {
+                    console.log("Textarea with id 'inputField' not found");
+                }
+                const submit_btn=document.getElementById('confirmButton')
+                submit_btn.click()
+                const stop_btn=document.getElementById('stop-tips')
+                stop_btn.style.display='none'
+            },
+            goal:async function() {
+                if (await waitForTrue(getVariableValue)){
+                    const colors = ["DodgerBlue", "OliveDrab", "Gold", "Pink", "SlateBlue", "LightBlue", "Violet", "PaleGreen", "SteelBlue", "SandyBrown", "Chocolate", "Crimson"];
+
+                    startConfetti(300,1,colors,2500);
+                    await showCenteredTooltip('<strong style="font-size: 20px;">Congratulations!🎇😁</strong><br>You have finished tutorial, have some fun!')
+
+                }
+                return true
+
+            },
+            button_name: "Click to draw"
+        }
+        // ,{
+        //     text: text = '<strong style="font-size: 20px;">One last thing!😊</strong><br>Please fill this Questionnaire after you playing!',
+        //
+        //     xpath: "/html/body/p/a[2]",
+        //     command: function() {
+        //         const stop_btn=document.getElementById('stop-tips')
+        //         stop_btn.style.display='none'
+        //         console.log('asd')
+        //     },
+        //     goal:async function() {
+        //         return true
+        //     },
+        //     button_name: "Ok"
+        // }
+
+
+    ];
+
+    // console.log([tips[-1]])
+
+
+    function updateControlHeight() {
+        var mapHeight = $('#map-container').height();
+        // console.log(mapHeight)
+        var newHeight = mapHeight / 3*2;
+        $('.leaflet-control-custom').css('max-height', newHeight + 'px');
+    }
+
+    $(document).ready(function() {
+        updateControlHeight();
+        $(window).resize(function() {
+            updateControlHeight();
+        });
+    });
+
+    var sid=''
+    const usedElements = [];
+    var allControls = [];
+    var currentIndex = 0;
+    var process_status=false
+           const color_list=['#756bb1',
+            '#3182bd',
+            '#e78ac3',
+            '#31a354',
+            '#74c476',
+            '#fb8072',
+            '#bc80bd',
+            '#8da0cb',
+            '#66c2a5',
+            '#e6550d',
+            '#fdae6b',
+            '#a1d99b',
+            '#636363',
+            '#b3b3b3']
+    var first_time_englischer_garten_error=true
+
+    function showNumber(text) {
+        if(text==="分析我上传的文件"){
+            document.getElementById('upload-btn').click()
+        }else {
+            var numberInput = document.getElementById("inputField");
+            numberInput.value = text;
+        }
+
+    }
+    // /}
+    document.getElementById('nightModeToggle').addEventListener('click', function() {
+        document.body.classList.toggle('night-mode');
+    });
+    var letters = '0123456789ABCDEF';
+    var color_dict = {}; // 存储标签与颜色的映射
+    var history_colors = new Set(); // 存储历史颜色以避免重复
+    var count = 0; // 初始化计数器
+    var button_index=0
+
+
+    var wait_button=[]
+    var map_button_dict={}
+    function add_map_button(map_data,targetText) {
+
+        map_button_dict[targetText]=map_data
+
+
+
+    }
+
+    function observeDOMChanges() {
+        const observer = new MutationObserver(mutations => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE && (node.className==='custom-rect'||node.classList.contains('custom-rect'))) {
+                        checkAndUpdateElement(node);
+                    }
+                });
+            });
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+    function checkAndUpdateElement(element) {
+
+        const divClone = element.cloneNode(true);
+
+        // 移除克隆元素中的 <span> 元素
+        const span = divClone.querySelector('.plan-label');
+        if (span) {
+            span.remove();
+        }
+        const span_map = divClone.querySelector('.plan-label-map');
+        if (span_map) {
+            span_map.remove();
+        }
+
+        // 获取剩余文本内容，并去除前后的空格
+        const desiredText = divClone.textContent.trim();
+        // console.log(desiredText)
+
+        if (desiredText in map_button_dict) {
+
+            // console.log(desiredText,'dom detect',element)
+            // rect.classList.remove('custom-rect');
+            element.className='map-button';
+            // console.log(desiredText,'className set')
+            const planLabel = document.createElement('span');
+            // console.log(desiredText,'planLabel createElement')
+            planLabel.className='plan-label-map'
+            // console.log(desiredText,'planLabel plan-label-map')
+            planLabel.textContent = 'Map';
+            element.appendChild(planLabel);
+            // console.log(desiredText,'planLabel appendChild')
+            element.addEventListener('click', function () {
+                console.log(desiredText)
+                // console.log(map_button_dict[desiredText])
+                updateMapDataAndFitBounds(map, map_button_dict[desiredText]);
+            });
+        }
+    }
+    observeDOMChanges();
+    // updateMapDataAndFitBounds function original
+    var map = L.map('map-container', {
+        doubleClickZoom: false,
+        zoomControl: false // Disable the zoom control
+    }).setView([48.145, 11.550], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+        opacity: 0.3  // 设置透明度为50%
+    }).addTo(map);
+    // 更新地图数据并自动缩放以适应所有元素
+    // updateMapDataAndFitBounds(map, newPolygons);
+
+    // updateMapDataAndFitBounds(map,geojsons)
+
+
+    var messages=[]
+
+    //         `
+
+    // Example:
+    // Query:I want to know largest 4 commerical buildings in 200 m of land which is forest
+    //
+    // Response:
+    // ${String.fromCharCode(96)}python
+    // id_list_buildings=id_list_of_entity('commerical buildings')
+    // id_list_forest=id_list_of_entity('land which is forest')
+    // id_list_buildings,id_list_forest=geo_filter(id_list_buildings,id_list_forest,'in 200 m of')
+    // id_list_area_filtered_buildings=area_filter(id_list_buildings, 4)
+    // ${String.fromCharCode(96)}
+    // `
+
+    messages.push({"role": "system",
+        "content": normal_prompt
+    })
+    var socket = io();  // 连接WebSocket服务器
+
+    socket.on('connect', function() {
+        socket.emit('join', {'username': 'user1', 'room': 'room1'});
+    });
+
+    socket.on('text', function(data) {
+        // console.log('Received message:', data);
+        if ("data" in data){
+            // console.log(data.data)
+            data.data.forEach(dict => {
+                if (dict.role === 'user') {
+                    // console.log('user')
+                    process_status=false
+                    document.getElementById('confirmButton').disabled=false
+                    // console.log(document.getElementById('chatWindow').innerHTML)
+
+                }
+            });
+            // console.log(map_button_dict)
+            messages.push(...data.data) //把代码返回值给回gpt
+            const elements = document.querySelectorAll('.message-text.response');
+
+            // 获取最后一个.message-text.response元素
+            const lastElement = elements[elements.length - 1];
+
+            // 在最后一个.message-text.response元素中找到所有.custom-rect元素
+            const customRects = lastElement.querySelectorAll('.custom-rect');
+            customRects.forEach(rect => {
+                if  (rect.className !== 'map-button' && !rect.classList.contains('map-button')){
+
+
+
+                    const divClone = rect.cloneNode(true);
+
+                    // 移除克隆元素中的 <span> 元素
+                    const span = divClone.querySelector('.plan-label');
+                    if (span) {
+                        span.remove();
+                    }
+                    const span_map = divClone.querySelector('.plan-label-map');
+                    if (span_map) {
+                        span_map.remove();
+                    }
+
+                    // 获取剩余文本内容，并去除前后的空格
+                    const desiredText = divClone.textContent.trim();
+                    // console.log(desiredText)
+
+                    if (desiredText in map_button_dict) {
+
+                        console.log(desiredText,'button set',rect)
+                        // rect.classList.remove('custom-rect');
+                        rect.className='map-button';
+                        // console.log(desiredText,'className set')
+                        const planLabel = document.createElement('span');
+                        // console.log(desiredText,'planLabel createElement')
+                        planLabel.className='plan-label-map'
+                        // console.log(desiredText,'planLabel plan-label-map')
+                        planLabel.textContent = 'Map';
+                        rect.appendChild(planLabel);
+                        // console.log(desiredText,'planLabel appendChild')
+                        rect.addEventListener('click', function () {
+                            console.log(desiredText)
+                            // console.log(map_button_dict[desiredText])
+                            updateMapDataAndFitBounds(map, map_button_dict[desiredText]);
+                        });
+                    }
+                }
+
+            });
+
+
+            // map_button_dict={}
+            // console.log(messages)
+        }
+        else if("map" in data) {
+            //
+            // console.log(data.map)
+            updateMapDataAndFitBounds( map,data.map,data['target_label']);
+            // console.log(data['target_label'])
+            add_map_button(data.map,data['index'])
+            //     document.getElementById('map-container').innerHTML=data.map
+        }
+
+        else if("sid" in data) {
+            //
+            sid=data['sid']
+            //     document.getElementById('map-container').innerHTML=data.map
+        }
+
+
+
+        // 在这里处理接收到的数据
+    });
+    const myP = document.getElementById('my-p');
+
+    // 在<p>标签被点击时弹出"123"
+    myP.addEventListener('click', () => {
+        alert('请联系微信号: 18302921075');
+    });
+
+    $(document).ready(function() {
+
+            var chatInput=$('#inputField')
+            var submitButton = $('#confirmButton')
+            var submit_email=$('#submit_email')
+
+            $('#file-input').on('change', function() {
+                var fileInput = document.getElementById('file-input');
+                var file = fileInput.files[0];
+                var formData = new FormData();
+                formData.append('file', file);
+
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if(data.filename) {
+                            var filenameShort = data.filename.slice(-10);
+                            document.getElementById('upload-btn').value = ".."+filenameShort;
+                            process_input("User upload a file in: .\\uploads\\"+data.filename)
+
+                        } else {
+                            alert('Upload failed');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Upload error');
+                    });
+            })
+            function handleEnter(e){
+                if (e.keyCode===13){
+                    console.log("enter")
+                    submitButton.click();
+                    e.preventDefault();  //避免回车换行
+                }
+            }
+
+            // 绑定Enter键盘事件
+            chatInput.on("keydown",handleEnter);
+
+            var chatWindow = $('#chatWindow');
+            function adjustContainerHeight() {
+                var windowHeight = $(window).height(); // 获取窗口的高度
+                var containerHeight = windowHeight - 100; // 窗口高度减去100px
+                // chatWindow.css('height', containerHeight + 'px'); // 设置容器的高度
+            }
+
+            // 首次加载时调整容器高度
+            adjustContainerHeight();
+
+            // 监听窗口大小变化事件，并调整容器高度
+            $(window).resize(adjustContainerHeight);
+            // const chatWindow = document.getElementById('markdownContainer');
+            function escapeHtml(html) {
+                let text = document.createTextNode(html);
+                let div = document.createElement('div');
+                div.appendChild(text);
+                return div.innerHTML;
+            }
+
+            function addRequestMessage(message) {
+                let escapedMessage = escapeHtml(message);  // 对请求message进行转义，防止输入的是html而被浏览器渲染
+                let requestMessageElement = $('<div class="row message-bubble"><img class="chat-icon" src="./static/images/avatar.png"><div class="message-text request">' +  escapedMessage + '</div></div>');
+                chatWindow.append(requestMessageElement);
+                let responseMessageElement = $('<div class="row message-bubble"><img class="chat-icon" src="./static/images/chatgpt.png"><div class="message-text response"><span class="loading-icon"><i class="fa fa-spinner fa-pulse fa-2x"></i></span></div></div>');
+                chatWindow.append(responseMessageElement);
+                chatWindow.scrollTop(chatWindow.prop('scrollHeight'));
+            }
+            function addResponseMessage(message) {
+                let lastResponseElement = $(".message-bubble .response").last();
+                lastResponseElement.empty();
+                let escapedMessage;
+
+                // 处理以><;.开头的行
+                message = message.split('\n').map(line => {
+                    if (line.startsWith('#><;')) {
+                        if ((line.includes('englischer garten')||line.includes('Englischer Garten'))&&line.includes('ID')) {
+                            return `<div class="custom-rect"><span class="plan-label">Step</span>${escapeHtml(line.substring(4))}</div>`;
+                        } else {
+                            return `<div class="custom-rect"><span class="plan-label">Step</span>${escapeHtml(line.substring(4))}</div>`;
+                        }
+                    } else {
+                        return line;
+                    }
+                }).join('\n');
+
+                // 处理流式消息中的代码块
+                let codeMarkCount = (message.match(/```/g) || []).length;
+                if (codeMarkCount % 2 == 1) {  // 有未闭合的 code
+                    escapedMessage = marked.parse(message + '\n\n```');
+                } else {
+                    escapedMessage = marked.parse(message);
+                }
+                lastResponseElement.html(escapedMessage);
+                $(".chat-window").scrollTop($(".chat-window").prop('scrollHeight'));
+            }
+
+            function escapeHtml(text) {
+                var map = {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                };
+                return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+            }
+            function cut_messages(originalArray){
+                if (originalArray.length > 5) {
+                    // 提取第一个元素
+                    const firstElement = originalArray.slice(0, 1);
+                    // 提取最后四个元素
+                    const lastFourElements = originalArray.slice(-4);
+                    // 结合这两部分
+                    const newArray = firstElement.concat(lastFourElements);
+                    console.log(newArray); // 输出: [1, 7, 8, 9, 10]
+                    return newArray
+                } else {
+                    // 如果数组长度不超过5，直接使用原数组
+                    console.log(originalArray);
+                    return originalArray
+                }
+
+            }
+            document.getElementById('reasoning_mode').addEventListener('click', function() {
+                // 发送 AJAX 请求到后台
+
+                var button = this;
+                // normal_prompt=normal_prompt.replace("id_list_of_entity",'id_list_of_entity_fast')
+                    if (!button.classList.contains('red-button')) {
+                        button.classList.add('red-button');
+                        message='debug'
+                    } else {
+                        message='not debug'
+                        button.classList.remove('red-button');
+                    }
+
+                if (currentMode === "reasoning") {
+                    currentMode = "fast";
+                } else {
+                    currentMode = "reasoning";
+                }
+            });
+            document.getElementById('debug_mode').addEventListener('click', function() {
+                // 发送 AJAX 请求到后台
+                var button = this;
+                var message
+                // 如果按钮当前没有红色样式，则添加，否则移除
+                if (!button.classList.contains('red-button')) {
+                    button.classList.add('red-button');
+                    message='debug'
+                } else {
+                    message='not debug'
+                    button.classList.remove('red-button');
+                }
+                fetch('/debug_mode', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({message:message})
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Response from server:', data);
+                        // 这里可以根据后台返回的数据执行一些操作
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+
+            });
+async function process_input(userInput) {
+    if (userInput !== "") {
+        addRequestMessage(userInput);
+        // Only manipulate messages history if not in auto test mode
+        if (!isTestRunning) {
+            messages = cut_messages(messages);
+            // Add user message to history only if not in test mode
+            messages.push({"role": "user", "content": userInput});
+        }
+        document.getElementById('inputField').value = '';
+
+        try {
+            const response = await fetch('/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: userInput, 'messages': messages, 'new_message': userInput, 'sid': sid, 'currentMode': currentMode })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let lastResponseElement = $(".message-bubble .response").last();
+            lastResponseElement.empty(); // Clear the loading spinner once at the beginning.
+            
+            let final_response_text = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+                const chunk = decoder.decode(value, { stream: true });
+                final_response_text += chunk;
+                // Directly render the accumulated text as HTML
+                lastResponseElement.html(marked.parse(final_response_text));
+                chatWindow.scrollTop(chatWindow.prop('scrollHeight'));
+            }
+
+            // After the stream is complete, do a final render with the full logic
+            // to handle any special formatting that might have been missed.
+            addResponseMessage(final_response_text);
+
+            // Only push messages to history if not in auto test mode
+            if (!isTestRunning) {
+                messages.push({ "role": "assistant", "content": final_response_text });
+            }
+            console.log('Success (stream complete)');
+
+            // Handle auto test continuation
+            if (isTestRunning && testInProgress) {
+                testInProgress = false;
+                currentTestIndex++;
+                
+                if (currentTestIndex < autoTestData.length) {
+                    // Immediately set next question in input field
+                    const nextTest = autoTestData[currentTestIndex];
+                    document.getElementById('inputField').value = nextTest.query;
+                    updateTestProgress();
+                    
+                    // Set flag to indicate next test is ready
+                    window.nextTestReady = true;
+                } else {
+                    // All tests completed
+                    stopAutoTest();
+                    alert('All tests completed successfully!');
+                }
+            }
+
+        } catch (error) {
+            console.error('Error:', error);
+            let lastResponseElement = $(".message-bubble .response").last();
+            lastResponseElement.text('An error occurred while fetching the response.');
+            
+            // Handle auto test error
+            if (isTestRunning && testInProgress) {
+                testInProgress = false;
+                console.error(`Test ${currentTestIndex + 1} failed:`, error);
+                currentTestIndex++;
+                
+                // Continue with next test after error
+                if (isTestRunning) {
+                    if (currentTestIndex < autoTestData.length) {
+                        // Immediately set next question in input field
+                        const nextTest = autoTestData[currentTestIndex];
+                        document.getElementById('inputField').value = nextTest.query;
+                        updateTestProgress();
+                        
+                        // Set flag to indicate next test is ready
+                        window.nextTestReady = true;
+                    } else {
+                        stopAutoTest();
+                        alert('All tests completed (some with errors)!');
+                    }
+                }
+            }
+        }
+    }
+}
+            document.getElementById('confirmButton').addEventListener('click', function() {
+                document.getElementById('title').style.display="none"
+                document.getElementById('chatWindow').style.display='block'
+                // document.getElementById('subscribe').style.display='none'
+                // document.getElementById('submit_email').style.display='none'
+                document.getElementById('map-container').style.visibility='visible'
+                var userInput = document.getElementById('inputField').value; // 获取文本框的值/
+                process_status=true
+                
+                // Handle auto test continuation when submit is clicked
+                if (isTestRunning && window.nextTestReady) {
+                    // Clear the chat window for next test
+                    $('#chatWindow').empty();
+                    window.nextTestReady = false;
+                    testInProgress = true;
+                }
+                
+                // document.getElementById('confirmButton').disabled=true
+                process_input(userInput)
+
+            });
+
+
+        }
+    )
+
+    // 添加响应消息到窗口,流式响应此方法会执行多次
+    let filePath = ''; // Store the file path
+
+    // Function to show the modal and display the file name
+    function showModal(fileName) {
+        document.getElementById('file-name-text').textContent = fileName; // Display the file name
+        document.getElementById('overlay_upload').style.display = 'block';
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    // Function to upload the file to the backend
+    async function uploadFile(event) {
+        const fileInput = event.target;
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        showSpinner(); // Show loading spinner
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to upload file');
+            }
+
+            const result = await response.json();
+            filePath = result.file_path; // Store the file path returned by the backend
+            showModal(file.name); // Show the modal with the file name
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to upload file');
+        } finally {
+            hideSpinner(); // Hide loading spinner
+        }
+    }
+
+    // Function to fetch data from the backend
+    async function fetchFileData() {
+        showSpinner(); // Show loading spinner
+
+        try {
+            const response = await fetch('/read_file', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ file_path: filePath }), // Send the file path to the backend
+            });
+
+            if (!response.ok) {
+                throw new Error('Please change your table name, is duplicate with elements exist!');
+            }
+
+            const data = await response.json(); // Get the response data (a dictionary)
+
+            // Fill the text boxes with the data
+            document.getElementById('category').value = data.category || '';
+            document.getElementById('name').value = data.name || '';
+            document.getElementById('geom').value = data.geom || '';
+            document.getElementById('table').value = data.table || '';
+            document.getElementById('epsg').value = data.epsg || '';
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Failed to fetch data from the backend');
+        } finally {
+            hideSpinner(); // Hide loading spinner
+        }
+    }
+
+    // Function to submit the form data to the backend
+    async function submitForm() {
+        const category = document.getElementById('category').value;
+        const table = document.getElementById('table').value;
+        const name = document.getElementById('name').value;
+        const geom = document.getElementById('geom').value;
+        const epsg = document.getElementById('epsg').value;
+
+        if (category === '' || name === '' || geom === ''|| table === ''|| epsg === '') {
+            alert('All fields are required!');
+            return;
+        }
+
+        const formData = {
+            category: category,
+            name: name,
+            geom: geom,
+            table:table,
+            file_path:filePath,
+            epsg:epsg
+
+        };
+
+        showSpinner(); // Show loading spinner
+
+        try {
+            const response = await fetch('/read_result', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData), // Send the form data as JSON
+            });
+
+            if (!response.ok) {
+                throw new Error('Please change your table name, it is duplicate with elements exist!');
+            }
+
+            const result = await response.json(); // Get the response from the backend
+
+            if (result.wait === true) {
+                alert('Upload success!'); // Show success message
+                closeModal();
+            } else {
+                alert('Upload fail!'); // Show failure message
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Please change your table name, it is duplicate with elements exist!');
+        } finally {
+            hideSpinner(); // Hide loading spinner
+        }
+    }
+
+    // Function to close the modal
+    function closeModal() {
+        document.getElementById('overlay_upload').style.display = 'none';
+        document.getElementById('modal').style.display = 'none';
+    }
+
+    // Function to show the loading spinner
+    function showSpinner() {
+        document.getElementById('spinner').style.display = 'block';
+    }
+
+    // Function to hide the loading spinner
+    function hideSpinner() {
+        document.getElementById('spinner').style.display = 'none';
+    }
+
+    // Close modal when clicking outside of it
+    document.getElementById('overlay_upload').onclick = closeModal;
+
+    // Auto Test Variables
+    let autoTestData = [];
+    let currentTestIndex = 0;
+    let isTestRunning = false;
+    let testInProgress = false;
+
+    // Auto Test Functions
+    async function startAutoTest() {
+        if (isTestRunning) {
+            alert('Test is already running!');
+            return;
+        }
+
+        try {
+            // Get test data from backend
+            const response = await fetch('/get_test_data');
+            const result = await response.json();
+
+            if (!result.success) {
+                alert('Failed to load test data: ' + result.error);
+                return;
+            }
+
+            autoTestData = result.data;
+            currentTestIndex = 0;
+            isTestRunning = true;
+            testInProgress = false;
+
+            // Show progress display
+            document.getElementById('test-progress').style.display = 'block';
+            document.getElementById('auto-test-btn').style.display = 'none';
+            
+            updateTestProgress();
+            runNextTest();
+
+        } catch (error) {
+            console.error('Error starting auto test:', error);
+            alert('Error starting auto test: ' + error.message);
+        }
+    }
+
+    function stopAutoTest() {
+        isTestRunning = false;
+        testInProgress = false;
+        document.getElementById('test-progress').style.display = 'none';
+        document.getElementById('auto-test-btn').style.display = 'inline-block';
+        document.getElementById('test-status').textContent = 'Test stopped';
+    }
+
+    function updateTestProgress() {
+        const progressElement = document.getElementById('test-counter');
+        const statusElement = document.getElementById('test-status');
+        
+        progressElement.textContent = `${currentTestIndex + 1}/${autoTestData.length}`;
+        
+        if (currentTestIndex < autoTestData.length) {
+            statusElement.textContent = `Testing: ${autoTestData[currentTestIndex].query.substring(0, 50)}...`;
+        } else {
+            statusElement.textContent = 'All tests completed!';
+        }
+    }
+
+    async function runNextTest() {
+        if (!isTestRunning || currentTestIndex >= autoTestData.length) {
+            stopAutoTest();
+            alert('All tests completed!');
+            return;
+        }
+
+        if (testInProgress) {
+            // Wait a bit if a test is still in progress
+            setTimeout(runNextTest, 1000);
+            return;
+        }
+
+        const currentTest = autoTestData[currentTestIndex];
+        console.log(`Running test ${currentTestIndex + 1}/${autoTestData.length}: ${currentTest.query}`);
+
+        updateTestProgress();
+
+        // Ensure UI is ready
+        document.getElementById('title').style.display = "none";
+        document.getElementById('chatWindow').style.display = 'block';
+        document.getElementById('map-container').style.visibility = 'visible';
+
+        // Set the input and trigger the test
+        document.getElementById('inputField').value = currentTest.query;
+        testInProgress = true;
+
+        // Submit the query
+        await process_input(currentTest.query);
+    }
+
+
+
+</script>
+
+
+
+</body>
+</html>

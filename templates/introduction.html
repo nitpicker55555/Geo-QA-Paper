@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Leaflet Map with GeoJSON</title>
+  <script src="../static/js/jquery-2.1.1.js"></script>
+  <script src="../static/js/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <link rel="stylesheet" href="../static/css/bootstrap.min.css">
+  <link rel="stylesheet" href="../static/font-awesome/css/font-awesome.min.css">
+  <link rel="stylesheet" href="../static/css/github-dark-dimmed.min.css">
+  <link rel="stylesheet" href="../static/css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- 引入 wellknown 库来解析 WKT -->
+  <script src="https://unpkg.com/wellknown/wellknown.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+  <!--<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />-->
+  <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+  <link rel="stylesheet" href="../static/css/common.css">
+  <link rel="stylesheet" href="../static/css/teach.css">
+  <link rel="stylesheet" href="../static/css/firework.css">
+  <script  src="../static/js/teach.js"></script>
+  <script src="../static/js/map_container.js"></script>
+  <script src="../static/js/firework.js"></script>
+
+  <style>
+    body, html {
+      height: 100%;
+      margin: 0;
+    }
+    .method {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 40px;
+      position: relative;
+    }
+    .method img {
+      margin: 0 100px;
+      max-width: calc(100% - 200px); /* Ensure image stays within the boundary */
+    }
+    .method span {
+      font-size: 2.2em;
+      position: absolute;
+      left: 100px; /* Align text with the left edge of the image */
+      top: -1.5em; /* Position above the image with a gap */
+    }
+    .content-container{
+      top: 80px;
+    }
+    #buttons_intro {
+      position: absolute;
+      top: -30px;
+      left: 70px; /* 距离窗口左边50px */
+      right: 70px; /* 距离窗口右边50px */
+
+      /*left: 220px;*/
+      display: flex;
+      justify-content: space-between;
+      align-items: center; /* 垂直居中对齐 */
+    }
+    #buttons_intro_top {
+      position: absolute;
+      top: 5px;
+      left: 50px; /* 距离窗口左边50px */
+      right: 50px; /* 距离窗口右边50px */
+
+      /*left: 220px;*/
+      display: flex;
+      justify-content: space-between;
+      align-items: center; /* 垂直居中对齐 */
+
+    }
+    button {
+      flex: 1;
+      margin: 2px;
+    }
+    p{
+      font-size: large;
+
+    }
+    h2 {
+      font-size: xx-large;
+    }
+    .email {
+      color: #1e90ff;
+      font-weight: bold;
+    }
+.class_description_intro{
+  top: 80px;
+  position: absolute;
+  width: calc(50% - 35px);
+  height: calc(100vh - 150px);
+  left:20px;
+}
+#map-container{
+  top:80px;
+}
+  </style>
+
+
+
+</head>
+<body>
+
+<div class="button-container">
+  <div id="buttons_intro_top">
+  <button onclick="showSection('section1')">What it is</button>
+  <button onclick="showSection('section2')">Supported spatial relations</button>
+
+  <button onclick="showSection('section3')">Data</button>
+</div>
+</div>
+
+<div id="map-container" ></div>
+<div id="section1" class="content-container" style="display: block;"> <!-- 默认显示这个section -->
+<br>
+<br>
+<br>
+  <h2>Hello! 👋</h2>
+  <p>
+    Welcome to our project!<br> The aim of this project is to utilize large language models to facilitate communication with spatial information stored in different formats. 🗺️ <br>You don't need any database knowledge to perform cross-database spatial searches.
+  </p>
+  <p>
+    Our goal is to create a more user-friendly interaction with spatial information databases. <br>In the future, users will be able to interact directly with their databases through this interface. 🚀
+  </p>
+  <p>
+    We hope you have fun exploring! 🎉
+  </p>
+  <p>
+    Due to hardware and ability limitations, searches and data transmission might sometimes be slow or result in errors. We appreciate your understanding. 🙏
+  </p>
+  <p class="email">
+    Contact me: puzhen.zhang@tum.de 📧
+  </p>
+  <br>
+  <br>
+  <br>
+  <button class="button" onclick="window.location.href='http://10.162.94.1:9090/'">Start playing!</button>
+</div>
+<div id="section2" class="content-container" style="display: none;">
+  <br>
+  <br>
+  <br>
+  <h2>Spatial Query Methods 🌍</h2>
+  <br>
+  <br>
+  <br>
+  <div class="method">
+    <img src="../static/images_spatial/buffer.png" alt="Buffer">
+    <span>Buffer (from a specific geographic feature by a defined distance)</span>
+  </div>
+  <div class="method">
+    <img src="../static/images_spatial/intersects.png" alt="intersects">
+
+    <span>Intersects</span>
+  </div>
+  <div class="method">
+    <img src="../static/images_spatial/within.png" alt="within">
+
+    <span>Within</span>
+  </div>
+  <div class="method">
+    <img src="../static/images_spatial/largest.png" alt="Largest">
+    <span>Area judge</span>
+  </div>
+</div>
+<div id="section3" class="content-container" style="display: none;">
+  <div id="description_intro" class="class_description_intro"></div>
+
+  <div id="buttons_intro">
+    <button onclick="loadGeoJSON('1')">Buildings</button>
+    <button onclick="loadGeoJSON('2')">Land</button>
+    <button onclick="loadGeoJSON('3')">Soil</button>
+    <button onclick="loadGeoJSON('4')">Points</button>
+    <button onclick="loadGeoJSON('5')">Lines</button>
+  </div>
+
+
+</div>
+
+
+<script>
+  function showSection(sectionId) {
+    if (sectionId==='section3'){
+      document.getElementById('map-container').style.display='block'
+
+      document.getElementById('map-container').style.visibility='visible'
+
+    }else
+    {
+      document.getElementById('map-container').style.display='none'
+
+    }
+    const sections = document.querySelectorAll('.content-container');
+    sections.forEach(section => {
+      if (section.id === sectionId) {
+        section.style.display = 'block';
+      } else {
+        section.style.display = 'none';
+      }
+    });
+  }
+  var descriptions={
+    "1": "<div ><h2>Data: Buildings</h2><p>OSM buildings data only has one category: <strong>building</strong>. Different types of buildings are presented through their <strong>name</strong>.</p><br><br>Data label format: (database of data)_(type of data)_(name of data)</div>",
+    "2": "<div ><h2>Data: Land</h2><p>OSM Landuse data includes 189 categories of polygonal land use data. You can explore these in the Maxvorstadt area example on the right.</p><br><br>Data label format: (database of data)_(type of data)_(name of data)</div>",
+    "3": "<div ><h2>Data: Soil</h2><p>Soil composition data from <em>\"Die Bundesanstalt für Geowissenschaften und Rohstoffe\".</em> <br><br>Contains 693 categories describing the composition of each soil sample, and there is no name label in soil data.<br><br> Despite the abstraction of the data content, we can still search interesting topics like 'which kind of soil good for planting xxx' in our system.<br><br>You can explore these in the Maxvorstadt area example on the right.</p><br><br>Data label format: (database of data)_(type of data)</div>",
+    "4": "<div ><h2>Data: Points</h2><p>OSM Landuse data includes 199 categories of point-type urban elements. You can explore these in the Maxvorstadt area example on the right.</p><br><br>Data label format: (database of data)_(type of data)_(name of data)</div>",
+    "5": "<div ><h2>Data: Lines</h2><p>OSM Landuse data includes 39 categories of line-type road data. You can explore these in the Maxvorstadt area example on the right.</p><br><br>Data label format: (database of data)_(type of data)_(name of data)</div>"
+  }
+
+
+  var map = L.map('map-container', {
+    doubleClickZoom: false,
+    zoomControl: false // Disable the zoom control
+  }).setView([48.145, 11.550], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    opacity: 0.3  // 设置透明度为50%
+    // attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+  var process_status=false
+  var currentIndex = 0;
+  const usedElements = [];
+
+  const color_list=['#756bb1',
+    '#3182bd',
+    '#e78ac3',
+    '#31a354',
+    '#6baed6',
+    '#74c476',
+    '#fb8072',
+    '#fdb462',
+    '#bc80bd',
+    '#8da0cb',
+    '#fdd0a2',
+    '#66c2a5',
+    '#e6550d',
+    '#fdae6b',
+    '#a1d99b',
+    '#636363',
+    '#ffd92f',
+    '#9ecae1',
+    '#b3b3b3']
+  var color_dict = {}; // 存储标签与颜色的映射
+  let target_labels=[
+    'land_university',
+
+  ]
+  var allControls = [];
+
+  function updateControlHeight() {
+    var mapHeight = $('#map-container').height();
+    console.log(mapHeight)
+    var newHeight = mapHeight / 3*2;
+    $('.leaflet-control-custom').css('max-height', newHeight + 'px');
+  }
+
+  $(document).ready(function() {
+    updateControlHeight();
+    $(window).resize(function() {
+      updateControlHeight();
+    });
+  });
+  var geojsonLayer; // 用于存储当前的 GeoJSON 图层
+  var geojsonData = {}; // 存储预加载的 GeoJSON 数据
+
+  // 预加载所有 GeoJSON 数据
+  document.addEventListener("DOMContentLoaded", function() {
+    fetchGeoJSON();
+  });
+
+  function fetchGeoJSON() {
+    for (let i = 1; i <= 5; i++) {
+      fetch(`/geojson/${i}`)
+              .then(response => response.json())
+              .then(data => {
+                geojsonData[i] = data; // 存储数据
+              });
+    }
+  }
+
+  function loadGeoJSON(index) {
+      document.getElementById('description_intro').innerHTML=descriptions[index]
+
+
+      updateMapDataAndFitBounds(map,geojsonData[index],[])
+
+  }
+</script>
+</body>
+</html>
