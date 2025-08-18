@@ -1,4 +1,4 @@
-# GeoQA - Geographic Question Answering System
+# GeoQA Portal: Natural Language Interaction with Geospatial Data Using Multi-Agent LLMs and Semantic Search
 
 ## Architecture
 
@@ -191,3 +191,19 @@ This script:
 - Generates ground truth results with detailed entity information
 - Outputs results to `ground_truth_[dataset]_*.jsonl` files
 - Provides accuracy statistics for each dataset
+
+## Citation
+
+If you use this code in your research, please cite:
+
+```bibtex
+@misc{feng2025barrierfreegeoqaportalnatural,
+      title={Towards a Barrier-free GeoQA Portal: Natural Language Interaction with Geospatial Data Using Multi-Agent LLMs and Semantic Search}, 
+      author={Yu Feng and Puzhen Zhang and Guohui Xiao and Linfang Ding and Liqiu Meng},
+      year={2025},
+      eprint={2503.14251},
+      archivePrefix={arXiv},
+      primaryClass={cs.IR},
+      url={https://arxiv.org/abs/2503.14251}, 
+}
+```
