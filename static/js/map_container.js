@@ -101,6 +101,10 @@ function updateMapDataAndFitBounds(map,geojson,target_labels=[]){
         // console.log(sortedObj)
         for (var label in sortedObj) {
             (function(label) {
+                // Check if the label exists in labels_ori before accessing its properties
+                if (!labels_ori[label]) {
+                    return; // Skip this label if it doesn't exist
+                }
                 let color=labels_ori[label]['color']
                 colors_btn[label]=color
                 let layer=labels_ori[label]['layer']
