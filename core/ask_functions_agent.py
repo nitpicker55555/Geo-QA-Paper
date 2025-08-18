@@ -615,17 +615,17 @@ class GeographicProcessor:
         
         query_clean = query.replace('with', '').strip().lower()
         
-        # Quick pattern matching
-        relation_patterns = {
-            'around': {'type': 'buffer', 'num': 100},
-            'in': {'type': 'in', 'num': 0},
-            'contains': {'type': 'contains', 'num': 0},
-            'intersects': {'type': 'intersects', 'num': 0},
-            'under': {'type': 'contains', 'num': 0},
-            'on': {'type': 'in', 'num': 0}
-        }
+        # Quick pattern matching - check longer patterns first to avoid substring matches
+        relation_patterns = [
+            ('contains', {'type': 'contains', 'num': 0}),
+            ('intersects', {'type': 'intersects', 'num': 0}),
+            ('around', {'type': 'buffer', 'num': 100}),
+            ('under', {'type': 'contains', 'num': 0}),
+            ('in', {'type': 'in', 'num': 0}),
+            ('on', {'type': 'in', 'num': 0})
+        ]
         
-        for pattern, relation in relation_patterns.items():
+        for pattern, relation in relation_patterns:
             if pattern in query_clean:
                 return relation
         

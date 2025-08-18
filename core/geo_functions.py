@@ -691,11 +691,18 @@ def geo_calculate(data_list1_original: Any, data_list2_original: Any, mode: str,
     if mode == 'area_filter':
         return area_filter(data_list1_original, buffer_number)
     
+    # Track if we need to reverse the result (for contains operation)
+    reverse_sign = False
+    
     try:
         # Handle reverse operations
         if mode == 'contains':
+            reverse_sign = True
             mode = 'in'
-            data_list1_original, data_list2_original = data_list2_original, data_list1_original
+            # Swap the data for contains operation
+            temp = data_list1_original
+            data_list1_original = data_list2_original
+            data_list2_original = temp
         
         # Normalize input data
         data1 = normalize_geometry_data(data_list1_original)
@@ -711,7 +718,7 @@ def geo_calculate(data_list1_original: Any, data_list2_original: Any, mode: str,
         result = perform_spatial_operation(gseries1, gseries2, mode, buffer_number)
         
         # Build result dictionaries
-        return build_spatial_result(result, data1, data2, bounding_box, test_mode)
+        return build_spatial_result(result, data1, data2, bounding_box, test_mode, reverse_sign)
         
     except Exception as e:
         logger.error(f"Error in geo_calculate: {e}")
@@ -815,7 +822,8 @@ def calculate_shortest_distance_optimized(gdf1: gpd.GeoDataFrame, gdf2: gpd.GeoD
     }
 
 def build_spatial_result(operation_result: Dict, data1: Dict, data2: Dict, 
-                        bounding_box: Optional[Dict], test_mode: Optional[bool]) -> Dict[str, Any]:
+                        bounding_box: Optional[Dict], test_mode: Optional[bool], 
+                        reverse_sign: bool = False) -> Dict[str, Any]:
     """Build final spatial operation result"""
     
     child_indices = operation_result.get('child_indices', set())
@@ -824,6 +832,10 @@ def build_spatial_result(operation_result: Dict, data1: Dict, data2: Dict,
     # Build geo dictionaries
     parent_geo_dict = transfer_id_list_2_geo_dict(list(parent_indices), data2)
     child_geo_dict = transfer_id_list_2_geo_dict(list(child_indices), data1)
+    
+    # For contains operation, swap parent and child
+    if reverse_sign:
+        parent_geo_dict, child_geo_dict = child_geo_dict, parent_geo_dict
     
     # Build visualization geo_map
     geo_map = {}
