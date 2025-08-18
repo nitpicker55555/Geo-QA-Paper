@@ -135,8 +135,6 @@ geo_qa/
 │   ├── rag_service.py        # RAG and vector search
 │   └── chat_py.py            # LLM integration
 ├── utils/
-│   ├── optimization_utils.py # Performance optimizations
-│   ├── security_utils.py     # Security utilities
 │   └── levenshtein.py        # String similarity
 ├── static/                   # Static files and GeoJSON
 ├── templates/                # HTML templates
