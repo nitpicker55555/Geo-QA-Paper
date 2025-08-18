@@ -1,1244 +1,1256 @@
 # -*- coding: utf-8 -*-
+"""
+Optimized Agent Functions Module
+
+This module provides optimized functions for spatial data processing and similarity calculations
+with improved performance, caching, and memory efficiency.
+
+Key Optimizations:
+- Caching system for repeated calculations
+- Optimized data structures and algorithms
+- Better memory management
+- Improved error handling and type safety
+- Modular design with clear separation of concerns
+"""
+
+import json
+import os
 import random
+import re
 import types
-from typing import Dict, Any
-import json, re, os
-import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache, wraps
+from typing import Dict, Any, List, Optional, Set, Tuple, Union, Callable
+import time
 
-# Add parent directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import spacy
+from flask import session
 
-from . import geo_functions
-from services.chat_py import *
-from utils.levenshtein import are_strings_similar
 # Import from unified RAG service
 from services.rag_service import (
     find_word_in_sentence,
     calculate_similarity_openai,
     calculate_similarity_chroma
 )
+from ..services.chat_py import *
+from ..utils.levenshtein import are_strings_similar
 from .geo_functions import *
-import spacy
 from .bounding_box import find_boundbox
 
-from flask import session
 
-# 加载spaCy的英语模型
+# ============================================================================
+# Global Variables and Configuration
+# ============================================================================
+
+# Load spaCy model only once
 nlp = spacy.load('en_core_web_sm')
-global_paring_dict = {}
 
-new_dict_num = 0
-file_path = 'processed_example.jsonl'
-fclass_dict = {}
-name_dict = {}
-fclass_dict_4_similarity = {}
-name_dict_4_similarity = {}
-all_fclass_set = set()
-all_name_set = set()
-for i in col_name_mapping_dict:
-    # i is table name
-
-    each_set = ids_of_attribute(i)
-    fclass_dict_4_similarity[i] = each_set
-    all_fclass_set.update(each_set)
-    if i != 'soil':
-        each_set = ids_of_attribute(i, 'name')
-        name_dict_4_similarity[i] = each_set
-        all_name_set.update(each_set)
+# Global dictionaries with type hints
+global_paring_dict: Dict[str, Any] = {}
+fclass_dict: Dict[str, Any] = {}
+name_dict: Dict[str, Any] = {}
+fclass_dict_4_similarity: Dict[str, Set[str]] = {}
+name_dict_4_similarity: Dict[str, Set[str]] = {}
+all_fclass_set: Set[str] = set()
+all_name_set: Set[str] = set()
 
 
-# print_modify(all_fclass_set)
-def limit_total_words(lst, max_length=10000):
+# ============================================================================
+# Caching and Performance Optimization
+# ============================================================================
+
+class PerformanceCache:
+    """
+    Centralized caching system for expensive operations
+    """
+    def __init__(self, max_size: int = 1000):
+        self._cache: Dict[str, Any] = {}
+        self._access_times: Dict[str, float] = {}
+        self.max_size = max_size
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached value"""
+        if key in self._cache:
+            self._access_times[key] = time.time()
+            return self._cache[key]
+        return None
+    
+    def set(self, key: str, value: Any) -> None:
+        """Set cached value with LRU eviction"""
+        if len(self._cache) >= self.max_size:
+            self._evict_lru()
+        
+        self._cache[key] = value
+        self._access_times[key] = time.time()
+    
+    def _evict_lru(self) -> None:
+        """Evict least recently used item"""
+        if not self._access_times:
+            return
+        
+        lru_key = min(self._access_times.keys(), key=lambda k: self._access_times[k])
+        del self._cache[lru_key]
+        del self._access_times[lru_key]
+    
+    def clear(self) -> None:
+        """Clear all cached data"""
+        self._cache.clear()
+        self._access_times.clear()
+
+
+# Global cache instance
+performance_cache = PerformanceCache()
+
+
+def cached(cache_key_func: Optional[Callable] = None):
+    """
+    Decorator for caching function results
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Generate cache key
+            if cache_key_func:
+                cache_key = cache_key_func(*args, **kwargs)
+            else:
+                cache_key = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
+            
+            # Check cache
+            cached_result = performance_cache.get(cache_key)
+            if cached_result is not None:
+                return cached_result
+            
+            # Compute and cache result
+            result = func(*args, **kwargs)
+            performance_cache.set(cache_key, result)
+            return result
+        
+        return wrapper
+    return decorator
+
+
+# ============================================================================
+# Optimized Data Structure Initialization
+# ============================================================================
+
+def initialize_similarity_dictionaries() -> None:
+    """
+    Initialize similarity dictionaries with optimized performance
+    """
+    global fclass_dict_4_similarity, name_dict_4_similarity, all_fclass_set, all_name_set
+    
+    # Use ThreadPoolExecutor for parallel processing
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+        
+        for table_name in col_name_mapping_dict:
+            # Submit fclass processing
+            futures.append(
+                executor.submit(_process_table_attributes, table_name, 'fclass')
+            )
+            
+            # Submit name processing (except for soil)
+            if table_name != 'soil':
+                futures.append(
+                    executor.submit(_process_table_attributes, table_name, 'name')
+                )
+        
+        # Collect results
+        for future in as_completed(futures):
+            table_name, attribute_type, attribute_set = future.result()
+            
+            if attribute_type == 'fclass':
+                fclass_dict_4_similarity[table_name] = attribute_set
+                all_fclass_set.update(attribute_set)
+            else:
+                name_dict_4_similarity[table_name] = attribute_set
+                all_name_set.update(attribute_set)
+
+
+def _process_table_attributes(table_name: str, attribute_type: str) -> Tuple[str, str, Set[str]]:
+    """
+    Process table attributes in separate thread
+    """
+    attribute_set = ids_of_attribute(table_name, attribute_type)
+    return table_name, attribute_type, attribute_set
+
+
+# Initialize dictionaries on module load
+initialize_similarity_dictionaries()
+
+
+# ============================================================================
+# Optimized Utility Functions
+# ============================================================================
+
+@lru_cache(maxsize=1000)
+def limit_total_words(text_tuple: Tuple[str, ...], max_length: int = 10000) -> List[str]:
+    """
+    Limit total word count with caching
+    """
     total_length = 0
     result = []
-
-    for item in lst:
+    
+    for item in text_tuple:
         current_length = len(item)
         if total_length + current_length > max_length:
             break
         result.append(item)
         total_length += current_length
-
-    return result
-
-
-def error_test():
-    print_modify("normal output")
-    raise Exception("asdasdawfdafc asdac zcx fwe")
-
-
-def is_string_in_list_partial(string, lst):
-    item_list = set()
-
-    for item in lst:
-        if string.lower() == str(item).lower():
-            if not has_middle_space:
-                return [item]
-            else:
-                item_list.add(item)
-        if string.lower() in str(item).lower().split(' '):
-            item_list.add(item)
-    return item_list
-
-
-def describe_label(query, given_list, table_name, messages=None):
-    if messages == None:
-        messages = []
-
-    ask_prompt = """
-    Based on the this list: %s, create imitations to match the query. Be sure to use the same language as the provided list, and be as concise as possible, offering only keywords. Response in json
-    {
-    'result':statement
-    }
-
-    """ % given_list
-    if messages == None:
-        messages = []
-    messages.append(message_template('system', ask_prompt))
-    messages.append(message_template('user', query))
-    result = chat_single(messages, 'json')
-    # print_modify(result)
-    json_result = json.loads(result)
-    if 'result' in json_result:
-
-        return json_result['result']
-    else:
-        raise Exception(
-            'no relevant item found for: ' + query + ' in given list.')
-
-
-def vice_versa(query, messages=None):
-    if messages == None:
-        messages = []
-
-    ask_prompt = """
-    Rewrite the input to inverse the judgement, return json format.
-    Example1:
-        user:"good for agriculture"
-
-        {
-        "result": "Bad for agriculture"
-        }
-    Example2:
-        user:"negative for planting tomatoes"
-        {
-        "result": "positive for planting tomatoes"
-        }
-    Example3:
-        user:"for commercial"
-        {
-        "result": "not for commercial"
-        }
-    """
-    if messages == None:
-        messages = []
-    messages.append(message_template('system', ask_prompt))
-    messages.append(message_template('user', query))
-    result = chat_single(messages, 'json')
-    # Ensure result is a string before loading
-    if isinstance(result, str):
-        json_result = json.loads(result)
-        if 'result' in json_result:
-            return json_result['result']
-    raise Exception(f'Could not process response for: {query}')
-
-
-def string_process(s):
-    processed = re.sub(r'\d+', '', s)
-    if processed.startswith(':'):
-        processed = processed[1:]
-    return processed
-
-
-def has_middle_space(s: str) -> bool:
-    # 去掉字符串两端的空格
-    stripped_s = s.strip()
-    # 如果字符串去掉两端空格后的长度小于2，说明中间不可能有空格
-    if len(stripped_s) < 2:
-        return False
-    # 检查字符串中间部分是否有空格
-    return ' ' in stripped_s[1:-1]
-
-
-def details_pick_chatgpt(query, given_list, table_name, messages=None):
-    # given_list = limit_total_words(given_list)
-    ask_prompt = """
-    Judge statement correct or not,
-    if correct, response in json:
-    {
-    "judgment":True
-    }
-    if not correct, response in json:
-    {
-    "judgment":False
-    }
-
-    Example1: 
-    "is "Fast ausschließlich (flacher) Gley über Niedermoor aus (flachen) mineralischen Ablagerungen" "good for agriculture"?"
-
-    Your response:
-    {
-    "judgment":True
-    }
-
-    """
-
-    reversed_query = vice_versa(query)
-    new_paring_dict = {query: [], reversed_query: []}
-
-    for word in given_list:
-        if word != '':
-            messages = []
-            messages.append(message_template('system', ask_prompt))
-            messages.append(message_template('user',
-                                             f'is "{string_process(word)}" "{query}"?'))
-            print_modify(f'is {string_process(word)} {query}?')
-
-            result = chat_single(messages, 'json')
-            # print_modify(result)
-            json_result = json.loads(result)
-            if 'judgment' in json_result:
-                if json_result['judgment']:
-                    new_paring_dict[query].append(word)
-                else:
-                    new_paring_dict[reversed_query].append(word)
-
-            else:
-                raise Exception(
-                    'no relevant item found for: ' + query + ' in given list.')
-    if new_paring_dict[query] != []:
-        if table_name not in global_paring_dict:
-            global_paring_dict[table_name] = {}
-
-        # global_paring_dict[table_name].update(new_paring_dict)
-
-        # with open('global_paring_dict.jsonl', 'a', encoding='utf-8') as file:
-        #     json.dump({table_name: new_paring_dict}, file)
-        #     file.write('\n')
-        return new_paring_dict[query]
-    raise Exception('no relevant item found for: ' + query)
-
-
-def judge_num_compare(type):
-    if 'higher' in str(type) or 'lower' in str(type) or 'bigger' in str(
-            type) or 'smaller' in str(type):
-        if 'higher' in str(type) or 'bigger' in str(type):
-            return abs(extract_numbers(type))
-        else:
-            return -1 * abs(extract_numbers(type))
-    else:
-        return False
-
-
-def judge_col_name(statement_split, table_name):
-    def judge_area(type):
-        if 'large' in str(type) or 'small' in str(type) or 'big' in str(type):
-            return True
-        else:
-            return False
-
-    if 'name' in statement_split or 'call' in statement_split:
-        return 'name'
-    elif judge_area(statement_split):
-        return 'area_num#'
-
-    else:
-        col_name_list = get_column_names(table_name)
-        for i in col_name_list:
-            if i in statement_split.split():
-                return i
-
-        return 'fclass'
-
-
-def details_pick(query, given_list, table_name, messages=None):
-    def after_match(query_paring_list):
-        vice_list = set(given_list) - set(query_paring_list)
-        new_paring_dict[query] = list(query_paring_list)
-        new_paring_dict[reversed_query] = list(vice_list)
-        if table_name not in global_paring_dict:
-            global_paring_dict[table_name] = {}
-
-        # global_paring_dict[table_name].update(new_paring_dict)
-
-        return new_paring_dict
-
-    reversed_query = vice_versa(query)
-    new_paring_dict = {query: [], reversed_query: []}
-    # describe the target label to make match more precise
-
-    query_paring_list = calculate_similarity_openai(table_name, query)
-    if len(query_paring_list) != 0:
-        result = after_match(query_paring_list)
-        new_paring_dict.update(result)
-        return result[query]
-    else:
-        target_label_describtion = describe_label(query, list(given_list)[:2],
-                                                  table_name)
-        query_paring_list = calculate_similarity_openai(table_name,
-                                                        target_label_describtion)
-
-        if len(query_paring_list) != 0:
-            result = after_match(query_paring_list)
-            # new_paring_dict.update(result)
-            # with open('global_paring_dict.jsonl', 'a', encoding='utf-8') as file:
-            #     json.dump({table_name: new_paring_dict}, file)
-            #     file.write('\n')
-            return result[query]
-        else:
-            raise Exception('no relevant item found for: ' + query)
-
-
-def extract_numbers(s):
-    numbers = re.findall(r'\d+', s)
-
-    a = 1
-
-    if 'small' in s:
-        a = -1
-    if len(numbers) != 0:
-        return int(numbers[0]) * a
-    else:
-
-        return 1 * a  # 如果没有显式说明最大数值，则为最大的
-
-
-def extract_and_reformat_area_words(input_string):
-    # 定义要查找的大小描述词
-    size_words = ['large', 'small', 'little', 'largest', 'smallest', 'biggest',
-                  'littlest']
-
-    # 使用正则表达式查找大小描述词和其后可能的数字
-    pattern = re.compile(r'\b(' + '|'.join(size_words) + r')\b\s*(\d*)',
-                         re.IGNORECASE)
-
-    match = pattern.search(input_string)
-    if match:
-        size_word = match.group(1)
-        number = match.group(2)
-
-        # 提取到的描述词和数字
-        extracted_part = size_word + ' ' + number if number else size_word
-
-        # 去掉提取到的部分，保留剩余字符串
-        remaining_part = input_string[:match.start()] + input_string[
-                                                        match.end():]
-
-        # 移除剩余字符串的首尾空格
-        remaining_part = remaining_part.strip()
-
-        # 返回格式化后的字符串
-        if remaining_part:
-            return f"{extracted_part} and {remaining_part}"
-        else:
-            return extracted_part
-    else:
-        return input_string
-
-
-def remove_substrings_from_text(text, substrings):
-    for substring in substrings:
-        # 使用正则表达式匹配确切的子字符串，并替换为空字符串
-        pattern = r'\b' + re.escape(substring) + r'\b'
-        text = re.sub(pattern, '', text)
-    return text
-
-
-def compare_num(lst, num):
-    def dynamic_compare(a, b, sign):
-        if sign > 0:
-            return a > b
-        else:
-            return a < b
-
-    result_list = []
-    for i in lst:
-        if str(i).isnumeric():
-            if dynamic_compare(int(i), abs(num), num):
-                result_list.append(i)
-
-    return result_list
-
-
-def pick_match(query_feature_ori, table_name, verbose=False,
-               bounding_box=None):
-    # for query_feature_ori['entity_text']==table_name,
-    # for query_feature_ori['entity_text']!=table_name, add query_feature_ori['entity_text'] to query_feature_ori['non_spatial_modify_statement']
-    try:
-        query_feature = query_feature_ori.strip()
-    except Exception as e:
-        print_modify(query_feature_ori)
-        raise Exception(e)
-
-    # print_modify(query_feature)
-    if ' and ' in query_feature:  # 复合特征
-        query_list = query_feature.split(" and ")
-    else:
-        query_list = [query_feature]
-    # Explicitly define the structure for clarity
-    match_list: Dict[str, Any] = {
-        'non_area_col': {'fclass': set(), 'name': set()},
-        'area_num': None
-    }
-    for query in query_list:
-
-        if query != '':
-            col_name = judge_col_name(query, table_name)
-
-            if '#' not in col_name:  # fclass和name的粗选, 沒有#代表不是面积比较
-                if col_name not in match_list['non_area_col']:
-                    match_list['non_area_col'][col_name] = set()
-                if are_strings_similar(query, table_name):
-                    match_list['non_area_col'][col_name].add(
-                        'all')  # 如果query和table名相似则返回所有
-                    # print_modify(match_list)
-                    continue
-
-                given_list = ids_of_attribute(table_name, col_name,
-                                              bounding_box_coordinates=bounding_box)
-                query = remove_substrings_from_text(query,
-                                                    ['named', 'is', 'which',
-                                                     'where', 'has', 'call',
-                                                     'called',
-                                                     table_name,
-                                                     col_name]).strip()
-
-                num_compare = judge_num_compare(query)
-                if num_compare:
-                    compared_list = set(compare_num(given_list, num_compare))
-                    print_modify(col_name, 'Satisfying the conditions:',
-                                 compared_list)
-                    match_list['non_area_col'][col_name].update(compared_list)
-                else:
-
-                    partial_similar = is_string_in_list_partial(query,
-                                                                given_list)
-                    if verbose:
-                        print_modify(query, table_name, col_name,
-                                     partial_similar)
-
-                    if len(partial_similar) >= 1:
-                        match_list['non_area_col'][col_name].update(
-                            set(partial_similar))
-                        # print_modify('   as')
-                        continue
-                    elif len(given_list) == 1:
-                        match_list['non_area_col'][col_name].update(
-                            set(given_list))
-                        continue
-                    else:  # 详细查找
-
-                        find_pre_matched = {}
-                        # if table_name in global_paring_dict:
-                        #     if list(global_paring_dict[table_name].keys()) != []:
-                        #         find_pre_matched = calculate_similarity(list(global_paring_dict[table_name].keys()),
-                        #                                                 query)
-
-                        # if find_pre_matched != {}:
-                        #     print_modify(f'find_pre_matched for {query}:', find_pre_matched)
-                        #     match_list_key = list(find_pre_matched.keys())[0]
-                        #     match_list['non_area_col'][col_name].update(
-                        #         set(global_paring_dict[table_name][match_list_key]))
-                        # return match_list
-                        # else:
-                        if col_name == 'name':
-                            match_dict, _ = name_cosin_list(query)
-                        else:
-                            match_dict, _ = calculate_similarity_chroma(
-                                query=query, openai_filter=True,
-                                give_list=given_list, mode='fclass')
-                        print_modify(query + '\n')
-
-                        if match_dict:
-                            match_list['non_area_col'][col_name].update(
-                                set(match_dict))
-
-                        else:
-                            if col_name == 'fclass':
-                                try:
-                                    match_list['non_area_col'][
-                                        col_name].update(
-                                        set(details_pick(query, given_list,
-                                                         table_name)))
-                                except Exception as e:
-                                    raise Exception(e, query, table_name,
-                                                    given_list)
-                                print_modify(f'\n\nmatch_list for {query}:',
-                                             match_list)
-                            else:
-                                query_modify = general_gpt(
-                                    'what is name of ' + query)
-                                print_modify(query_modify + '\n')
-                                match_dict, _ = calculate_similarity_chroma(
-                                    query=query, openai_filter=False,
-                                    give_list=given_list)
-
-                                print_modify('\n\nmatch_dict:', match_dict)
-                                if match_dict != {}:
-                                    match_list['non_area_col'][
-                                        col_name].update(set(match_dict))
-
-            else:  # area relate query
-
-                match_list['area_num'] = extract_numbers(query)
-
-                continue
-
-    if match_list == []:
-        raise Exception(
-            'no relevant item found for: ' + query_feature + ' in given list.')
-
-    if verbose: print_modify(match_list, query_feature, table_name)
-    return match_list
-    # messages.append(message_template('assistant',result))
-
-
-def print_process(*args):
-    for content in args:
-        # print_modify(type(content))
-        if isinstance(content, dict):
-            if 'id_list' in content:
-                if len(content['id_list']) != 0:
-                    print_content = 'id_list length '
-                    print_content += str(len(content['id_list']))
-                    print_content += ',id_list print samples:'
-                    if len(content['id_list']) >= 3:
-                        print_content += str(
-                            random.sample(list(content['id_list'].items()), 2))
-                    else:
-                        print_content += str(
-                            random.sample(list(content['id_list'].items()),
-                                          len(content['id_list'])))
-                    print_modify(print_content)
-                else:
-                    print_modify('id_list length 0')
-            else:
-                # pass
-                print_modify(content)
-        else:
-            # pass
-            print_modify(content)
-
-
-def judge_geo_relation(query, messages=None):
-    query = query.replace('with', '').strip()
-    sample_list = ['in', 'contains', 'intersects']
-    if query == 'around':
-        return {'type': 'buffer', 'num': 100}
-    if query in sample_list:
-        return {'type': query, 'num': 0}
-    if 'under' in query:
-        return {'type': 'contains', 'num': 0}
-    if 'on' in query:
-        return {'type': 'in', 'num': 0}
-
-    if messages == None:
-        messages = []
-    ask_prompt = """You are a search query analyst tasked with analyzing user queries to determine if they include 
-    geographical relationships. For each query, assess if it contains any of the following geographical operations: [
-    'intersects', 'contains','in', 'buffer', 'area_calculate']. Provide a response indicating whether the query includes a 
-    geographical calculation and, if so, which type. Response in json format. Examples of expected analyses are as follows: 
-
-Query: "100m around of"
-Response:
-{
-    "geo_calculations": {
-        "exist": true,
-        "type": "buffer",
-        "num": 100
-    }
-}
-Query: "have/contains/under"
-Reasoning: if query is about have/contains/under, type of geo_calculations is contains.
-Response:
-{
-    "geo_calculations": {
-        "exist": true,
-        "type": "contains",
-        "num": 0
-    }
-}
-Query: "in/within/on"
-Reasoning: if query is about in/within, type of geo_calculations is in.
-Response:
-{
-    "geo_calculations": {
-        "exist": true,
-        "type": "in",
-        "num": 0
-    }
-}
-Query: "near/close/neighbour/around"
-Response:
-{
-    "geo_calculations": {
-        "exist": true,
-        "type": "buffer",
-        "num": 1000
-    }
-}
-Query: "I want to know the largest 5 parks"
-Response:
-{
-    "geo_calculations": {
-        "exist": true,
-        "type": "area_calculate",
-        "num": 5
-    }
-}
-For queries that do not involve any geographical relationship, your response should be:
-
-{
-    "geo_calcalculations": {
-        "exist": false,
-    }
-}
-For relations like passes through/meets, it should be taken as intersects
-Please ensure accuracy and precision in your responses, as these are critical for correctly interpreting the user's needs.
-    """
-    if messages == None:
-        messages = []
-
-    messages.append(message_template('system', ask_prompt))
-    messages.append(message_template('user', query))
-    result = chat_single(messages, 'json')
-    # print_modify(result)
-    json_result = json.loads(result)
-    if 'geo_calculations' in json_result:
-        if json_result['geo_calculations']['exist']:
-            # object_dict=judge_object_subject(query)
-            if 'num' in json_result['geo_calculations']:
-                return {'type': json_result['geo_calculations']['type'],
-                        'num': json_result['geo_calculations']['num']}
-            else:
-                return {'type': json_result['geo_calculations']['type'],
-                        'num': 0}
-        else:
-            return None
-    else:
-        raise Exception(
-            'no relevant item found for: ' + query + ' in given list.')
-
-
-def judge_object_subject_multi(query, messages=None):
-    multi_prompt = """
-You are an excellent linguist，Help me identify all entities from this statement and spatial_relations. Please format your response in JSON. 
-Example:
-query: "I want to know which soil types the commercial buildings near farm on"
-response:
-{
-"entities":
-[
-  {
-    'entity_text': 'soil',
-  },
-  {
-    'entity_text': 'commercial buildings',
-  },
-    {
-    'entity_text': 'farm',
-  }
-],
- "spatial_relations": [
-    {"type": "on", "head": 1, "tail": 0},
-    {"type": "near", "head": 1, "tail": 2}
-  ]
-}
-
-query: "I want to know residential area in around 100m of land which is forest"
-response:
-{
-  "entities": [
-    {
-      "entity_text": "residential area",
-    },
-    {
-      "entity_text": "land which is forest",
-    },
-  ],
-  "spatial_relations": [
-    {"type": "in around 100m of", "head": 0, "tail": 1},
-  ]
-}
-query: "show land which is university and has name TUM"
-response:
-{
-  "entities": [
-    {
-      "entity_text": "land which is university and has name TUM",
-    },
-  ],
-  "spatial_relations": []
-}
-query: "show land which is university or bus stop"
-response:
-{
-  "entities": [
-    {
-      "entity_text": "land which is university or bus stop",
-    },
-  ],
-  "spatial_relations": []
-}
-Notice, have/has should be considered as spatial_relations:
-like: residential area which has buildings.
-    """
-    if messages == None:
-        messages = []
-    ask_prompt = multi_prompt
-    messages.append(message_template('system', ask_prompt))
-    messages.append(message_template('user', query))
-    result = chat_single(messages, 'json', 'gpt-4o-2024-05-13')
-    # print_modify(result)
-    json_result = json.loads(result)
-    return json_result
-
-
-def find_keys_by_values(d, elements):
-    result = {}
-    for key, values in d.items():
-        matched_elements = [element for element in elements if
-                            element in values]
-        if matched_elements:
-            result[key] = matched_elements
-    return result
-
-
-def merge_dicts(dict_list):
-    if isinstance(dict_list,dict):
-        dict_list=[dict_list]
-    result = {}
-    for d in dict_list:
-        for key, subdict in d.items():
-            if key not in result:
-                result[key] = subdict.copy()  # 初始化键对应的字典
-            else:
-                result[key].update(subdict)  # 使用 update 方法更新字典
-    return result
-
-
-def remove_non_spatial_modify_statements(data):
-    for entity in data.get("entities", []):
-        if "non_spatial_modify_statement" in entity:
-            del entity["non_spatial_modify_statement"]
-    return data
-
-
-def name_cosin_list(query, all_name_set=None):
-    # print('name input ',query)
-
-    if all_name_set:
-        if query.strip() in all_name_set:
-            return [query.strip()], True
-        if query.lower().strip() in all_name_set:
-            return [query.lower().strip()], True
-        if query in all_name_set:
-            return [query], True
-        if 'restaurant' not in query:
-            match_word = find_word_in_sentence(all_name_set, query,
-                                               judge_strong=True)
-            if isinstance(match_word, tuple):  # 完全匹配
-                return [match_word[0]], True
-
-            if match_word:
-                return_fclass_list = get_attribute_by_column(match_word,
-                                                             'name')
-                ask_prompt = """
-    You need to determine whether the category information obtained here meets the query intent. If it does, return True
-    Example:
-    User: "school named Ludwig"
-    category:'service' for name 'Ludwig'
-    Return: False. Since service does not match school.
-
-    Return json
-    {
-    'match': True/False
-    }
-                """
-                # if_match=general_gpt_without_memory(query=f'query:{query},We get matching category for name {match_word} which is:{return_fclass_list}',ask_prompt=ask_prompt,json_mode='json')
-                # print(if_match)
-
-                # if 'true' in str(if_match).lower():
-                return [match_word], False
-
-    match_list, name_judge_strong = calculate_similarity_chroma(query)
-
-    return match_list, name_judge_strong
-
-
-# Function moved to agent_search_fast.py module
-# Import from the new module when needed:
-
-
-def calculate_similarity(query, column='type', table_name=None, bounding_box=None):
-    global all_fclass_set, all_name_set
-    if bounding_box == None:
-        # pass
-        bounding_box = session['globals_dict']
-
-    if column == 'type':
-        give_list = all_fclass_set
-    else:
-        give_list = all_name_set
-    column = column.replace("type", 'fclass')
-
-    if table_name:
-        give_list = ids_of_attribute(table_name, specific_col=column,
-                                     bounding_box_coordinates=bounding_box)
-    similar_match = calculate_similarity_chroma(query=query, give_list=give_list, mode=column)[0]
-    if not similar_match and table_name:
-        return ("No similar items found, here are five examples from this table: %s, you need to change your query to "
-                "this expression style/language")%str(list(give_list)[:5])
-    return similar_match
-
-
-def find_table_by_elements(elements, column='type'):
-    global all_fclass_set, all_name_set, name_dict_4_similarity, fclass_dict_4_similarity
-    if column == 'type':
-
-        return find_keys_by_values(fclass_dict_4_similarity, elements)
-    else:
-        return find_keys_by_values(name_dict_4_similarity, elements)
-
-
-def ids_of_elements(table_name, col_type=None, col_name=None, bounding_box=None):
-    if bounding_box == None:
-        bounding_box = session['globals_dict']
-    if col_name is None:
-        col_name = []
-    if col_type is None:
-        col_type = []
-    ids_list = ids_of_type(table_name, {
-        'non_area_col': {'fclass': set(col_type),
-                         'name': set(col_name)},
-        'area_num': None}, bounding_box=bounding_box)
-    return ids_list
-
-
-def id_list_of_entity(query, verbose=False, bounding_box=None):
-    query = query.lower()
-
-    query = query.replace("strasse", 'straße')
-    all_id_list = []
-    if bounding_box == None:
-        bounding_box = session['globals_dict']
-        # pass
-    global all_fclass_set, all_name_set, name_dict_4_similarity, fclass_dict_4_similarity
-
-    table_return=judge_table(query)
-    if table_return:
-        table_str = next(iter(table_return.values()))
-
-        print_modify("possible table: ", table_str)
-
-        add_str = table_str
-        if 'notice' in col_name_mapping_dict[table_str]:
-            add_str += ", Notice Information: %s" % col_name_mapping_dict[table_str]['notice']
-        query += " (This query has Possible limited table: %s )" % add_str
-
-    if bounding_box != None:
-        all_fclass_set = set()
-        all_name_set = set()
-        for i in col_name_mapping_dict:
-            # i is table name
-
-            each_set = ids_of_attribute(i,
-                                        bounding_box_coordinates=bounding_box)
-            fclass_dict_4_similarity[i] = each_set
-            all_fclass_set.update(each_set)
-            if i != 'soil':
-                each_set = ids_of_attribute(i, 'name',
-                                            bounding_box_coordinates=bounding_box)
-                name_dict_4_similarity[i] = each_set
-                all_name_set.update(each_set)
-
-    # each_set = ids_of_attribute(i, specific_col='fclass',bounding_box_coordinats=bounding_box)
-    sys_prompt = """
-You can use the following function to perform a search:
-
-The city database has two columns: `type` and `name`, available in both English and German.  
-- `type` refers to the category, such as building type, soil type, or land type (e.g., greenery, university).  
-- `name` refers to the specific name of an element in the city, such as a building name, land name (e.g., specific street names, restaurant names), etc.
-
-1. `match_list = calculate_similarity(query=query, column=column, table_name=None)`  
-This function returns a list of similar items based on vector similarity.  
-Since the list may be inaccurate, You should first perform a semantic check and only pass the elements that meet the query requirements to find_table_by_elements.
-If the returned list is empty, you need to adjust the query and perform the search again.  
-You can use your own knowledge to decide how to modify the query—if the search is too abstract, change the query's content or form.
-
-If the query explicitly specifies a table name (you will be informed in the query), and you agree that it clearly restricts the table, then only search within that table. In that case, you **do not** need to call `find_table_by_elements` to determine the table name, because you already know it.
-
-2. `table_dict = find_table_by_elements(elements=[], column=column)`  
-This function takes a list of elements as input, e.g., `[a, b, c, d]`, and returns a dictionary like:  
-`{"table_a": [a, b], "table_b": [c, d]}`  
-It helps you determine which table each element belongs to.
-
-3. `each_id_list = ids_of_elements(table_name, col_type=[], col_name=[])`  
-This function returns the results based on the `type` and `name` filters. Both parameters are lists.  
-If both are non-empty, the function returns elements that satisfy BOTH conditions.  
-This is useful for queries like "Isar River," where "Isar" is the name and "River" is the type.  
-If either list is empty, that column is not used as a filter.
-
-Since `ids_of_elements` can return a very long list, **only use `len()` to check whether it's empty**; do not print the entire result.
-
-You can construct multiple calls to `ids_of_elements` and append the results to a list (do not use `extend`).
-
-If the input query is nearly identical to a table name(It only works when the words are nearly identical in spelling, such as the difference between singular and plural forms.), you can directly use:  
-`final_id_list = ids_of_elements(table_name, col_type=[], col_name=[])`  
-to return all the elements in that table.
-
-You need to write Python code to call the functions above, wrapped in ```python and ```.  
-Use `print` statements to show anything you need to examine.  
-The final result should be stored in a variable called `final_id_list` (which is still a list).  
-
-**Notice:** Please only call **one** function per session!
-    """
-    print(query)
-    namespace = {name: obj for name, obj in globals().items() if isinstance(obj, types.FunctionType)}
-    namespace["final_id_list"] = []
-    messages = messages_initial_template(sys_prompt, query)
-    round_num = 0
-    merged_id_list = {} # Initialize to prevent unbound error
-    while round_num <= 10:
-        round_num += 1
-        code_result = chat_single(messages,temperature=0.5)
-        print("response", code_result)
-
-        messages.append(message_template('assistant', code_result))
-
-        if 'python' in code_result:
-            code_return = str(
-                execute_and_display(extract_python_code(code_result),
-                                    namespace))
-        else:
-            code_return = code_result
-
-        print("code_return", code_return)
-        messages.append(message_template('user', str(code_return)))
-
-        if 'final_id_list' in namespace:
-            if namespace["final_id_list"]:
-                 if 'traceback' not in str(code_return).lower():
-                     merged_id_list = merge_dicts(namespace["final_id_list"])
-                     break
-
-    return merged_id_list
-
-
-def intersect_dicts(dict1, dict2):
-    # 获取两个字典键的交集
-    common_keys = set(dict1.keys()).intersection(set(dict2.keys()))
-    #
-    if common_keys:
-        return list(common_keys)
-    else:
-        # 如果没有交集，输出两个字典键名列表的总和
-        combined_keys = list(set(list(dict1.keys()) + list(dict2.keys())))
-        return combined_keys
-
-
-def print_modify(*args):
-    for i in args:
-        print(i)
-    print('; ')
-
-
-def data_intersection_id_list(query, bounding_box=None):
-    global all_fclass_set, all_name_set
-    table_name_dicts = {}
-    table_fclass_dicts = {}
-    all_id_list = []
-    type_dict_list = []
-
-    name_judge_strong = False
-    # query=remove_substrings_from_text(query,['named', 'is', 'which', 'where', 'has', 'call', 'called','name'])
-    print("bounding_box", bounding_box)
-    if bounding_box != None:
-        all_fclass_set = set()
-        all_name_set = set()
-        for i in col_name_mapping_dict:
-            # i is table name
-
-            each_set = ids_of_attribute(i,
-                                        bounding_box_coordinates=bounding_box)
-            fclass_dict_4_similarity[i] = each_set
-            all_fclass_set.update(each_set)
-            if i != 'soil':
-                each_set = ids_of_attribute(i, 'name',
-                                            bounding_box_coordinates=bounding_box)
-                name_dict_4_similarity[i] = each_set
-                all_name_set.update(each_set)
-
-    # print("fclass_dict_4_similarity",fclass_dict_4_similarity)
-    # print("all_fclass_set",all_fclass_set)
-
-    match_list, fclass_judge_strong = calculate_similarity_chroma(
-        give_list=all_fclass_set, query=query,
-        mode='fclass')
-    # match_list = set(match_list.keys())
-    print("match_list", match_list)
-    print("query", query)
-    print_modify('fclass_judge_strong', fclass_judge_strong)
-
-    ask_prompt = """
-        You need to determine whether this query is seeking entity based on name or a non-named, broad category of things. 
-        If is named entity, return True, otherwise return false.
-        Example:
-        User: water body
-        Return {"named_entity": false}
-        User: Hauptbahnhof
-        Return {"named_entity": true}
-        User: Isar river
-        Return {"named_entity": true}
-        User: wasserwirtschaftsamt
-        Return {"named_entity": true}
-        User: chinese restaurants/children hospital (since it is based on name) for all combined-words:
-        Return {"named_entity": true}
-
-
-        Return the result in JSON format with short description why you choose that like:  
-
-
-    ```json
-    {"named_entity": true/false
-
-    }
-    ```
-        """
-    named_entity_judge = None
-
-    if len(match_list) != 0:
-        table_fclass_dicts = find_keys_by_values(fclass_dict_4_similarity,
-                                                 match_list)
-        print_modify("table_fclass_dicts: ", table_fclass_dicts)
-
-    if not fclass_judge_strong:  # 如果fclass judge strong就会不加载name列表
-        match_list, name_judge_strong = name_cosin_list(query, all_name_set)
-        print("name_judge_strong", name_judge_strong)
-        # print("all_name_set",all_name_set)
-        if len(match_list) != 0:
-            table_name_dicts = find_keys_by_values(name_dict_4_similarity,
-                                                   match_list)
-            print_modify("table_name_dicts: ", table_name_dicts)
-            if name_judge_strong:  # 如果name judge strong就会不加载fclass列表
-                table_fclass_dicts = {}
-
-    # if table_name_dicts != {} and table_fclass_dicts != {}:
-    #     table_fclass_dicts.update({'buildings': ['building']})
-    if table_name_dicts == {} and table_fclass_dicts == {}:
-        return None
-
-    intersection_keys_list = intersect_dicts(table_name_dicts,
-                                             table_fclass_dicts)
-    # print("table_fclass_dicts", table_fclass_dicts)
-    # print("table_name_dicts", table_name_dicts)
-    # print("intersection_keys_list", intersection_keys_list)
-    for table_ in intersection_keys_list:
-        name_list = []
-        fclass_list = []
-        if table_ in table_name_dicts:
-            name_list = table_name_dicts[table_]
-        if table_ in table_fclass_dicts:
-            fclass_list = table_fclass_dicts[table_]
-
-        each_id_list = ids_of_type(table_, {
-            'non_area_col': {'fclass': set(fclass_list),
-                             'name': set(name_list)},
-            'area_num': None}, bounding_box=bounding_box)
-        type_dict_list.append({'non_area_col': {'fclass': set(fclass_list),
-                                                'name': set(name_list)},
-                               'area_num': None})
-        print_modify("type_dict", {'non_area_col': {'fclass': set(fclass_list),
-                                                    'name': set(name_list)},
-                                   'area_num': None})
-        all_id_list.append(each_id_list)
-    # print_modify(type_dict_list)
-    merged_id_list = merge_dicts(all_id_list)
-    print_modify('elements searched length:', len(merged_id_list['id_list']))
-    # print("len(merged_id_list['id_list'])", len(merged_id_list['id_list']))
-
-    if name_judge_strong or fclass_judge_strong:
-        return merged_id_list
-    if len(merged_id_list['id_list']) >= 1:
-        if ' name' in query or 'restaurant' in query:
-            named_entity_judge = True
-        else:
-
-            general_gpt_result = general_gpt(ask_prompt=ask_prompt,
-                                             query=query,
-                                             json_mode='json_few_shot',
-                                             verbose=False)
-            named_entity_judge = general_gpt_result['named_entity']
-        if named_entity_judge:
-            return merged_id_list
-    if named_entity_judge is None:
-        if ' name' in query:
-            named_entity_judge = True
-        else:
-            general_gpt_result = general_gpt(ask_prompt=ask_prompt,
-                                             query=query,
-                                             json_mode='json_few_shot',
-                                             verbose=False)
-            named_entity_judge = general_gpt_result['named_entity']
-
-    # if (len(merged_id_list['id_list']) <4 and len(query.split())==1) or len(merged_id_list['id_list']) <10:
-    if not named_entity_judge or len(merged_id_list['id_list']) < 1:
-
-        for table_ in intersection_keys_list:
-            name_list = []
-            fclass_list = []
-            if table_ in table_name_dicts:
-                name_list = table_name_dicts[table_]
-            if table_ in table_fclass_dicts:
-                fclass_list = table_fclass_dicts[table_]
-            # if table_ != 'buildings':  # 并集不并buildings
-            if len(fclass_list) != 0:
-                if not named_entity_judge:
-                    each_id_list = ids_of_type(table_, {
-                        'non_area_col': {'fclass': set(fclass_list),
-                                         'name': set()},
-                        'area_num': None}, bounding_box=bounding_box)
-                    all_id_list.append(each_id_list)
-
-            if len(name_list) != 0:
-                # if named_entity_judge:
-                each_id_list = ids_of_type(table_, {
-                    'non_area_col': {'fclass': set(), 'name': set(name_list)},
-                    'area_num': None}, bounding_box=bounding_box)
-                all_id_list.append(each_id_list)
-
-        return merge_dicts(all_id_list)
-
-
-def find_negation(text):
-    # 使用spaCy处理文本
-    doc = nlp(text)
-
-    # 检查是否有依存关系为'neg'的词
-    for token in doc:
-        if token.dep_ == 'neg':
-            return True, token.text
-    return False, None
-
-
-def get_label_from_id(id_list):
-    return {key[:list(key).index('_', list(key).index('_') + 1)] for key in
-            id_list.keys() if key.count('_') >= 2}
-
-
-def geo_filter(query, id_list_subject, id_list_object, bounding_box=None):
-    """
-    geo_relation{num}=judge_geo_relation(multi_result['spatial_relations'][{num}]['type'])
-    geo_result{num}=geo_calculate(id_list{relations['head']},id_list{relations['tail']},geo_relation{num}['type'],geo_relation{num}['num'])
-
-    :param query:
-    :return:
-    """
-    if isinstance(id_list_subject, str):
-        id_list_subject = id_list_of_entity(id_list_subject)
-    if isinstance(id_list_object, str):
-        id_list_object = id_list_of_entity(id_list_object)
-
-    versa_sign, negation_word = find_negation(query)
-    if versa_sign:
-        query = query.replace(negation_word, '')
-    geo_relation = judge_geo_relation(query)
-    if geo_relation is None:
-        # Handle case where no relation is found
-        return {'error': 'No geographical relation found in query.'}
     
-    geo_result = geo_calculate(id_list_subject, id_list_object,
-                               geo_relation['type'], geo_relation['num'],
-                               versa_sign=versa_sign,
-                               bounding_box=bounding_box)
-    target_label = list(get_label_from_id(geo_result['subject']['id_list']))
-    geo_result['geo_map']['target_label'] = target_label
-    # print_modify(target_label,'target_label')
-    return geo_result
+    return result
 
 
-def judge_table(query, messages=None):
-    if isinstance(query, dict):
-        query = str(query)
-
-    soil_list = [
-        'planting', 'potatoes',
-        'tomatoes', 'strawberr', 'agriculture', 'soil', 'farming'
-    ]
-
-    for pp in soil_list:
-        if pp in query.lower():
-            return {'database': 'soil'}
-    if query == None:
-        return None
-    if messages == None:
-        messages = []
-    # print_modify(query.lower(),"query.lower()")
-    for i in similar_table_name_dict:
-        if i in query.lower().split():
-            return {'database': similar_table_name_dict[i]}
-
-    for i in col_name_mapping_dict:
-        if i in query.lower().split():
-            return {'database': i}
-
-    if 'greenery' in query.lower():
-            return {'database': 'area'}
-
-    return None
+def safe_print(*args) -> None:
+    """
+    Safe printing function with error handling
+    """
+    try:
+        for arg in args:
+            print(arg, end=' ')
+        print()  # New line
+    except Exception as e:
+        print(f"Print error: {e}")
 
 
-
-def set_bounding_box(region_name, query=None):
-    bounding_box_dict = {
-        "bounding_box_region_name": ''
-        , "bounding_coordinates": ''
-        , "bounding_wkb": ''
-    }
-    if region_name == '':
-        session['globals_dict']=None
-
-        return {'geo_map': ''}
-
-    bounding_box_dict["bounding_box_region_name"] = region_name
-    coords, wkb_hex, response_str = find_boundbox(region_name)
-    bounding_box_dict['bounding_coordinates'] = coords
-    bounding_box_dict['bounding_wkb'] = wkb_hex
-    geo_dict = {
-        bounding_box_dict["bounding_box_region_name"]: (
-            wkb.loads(bytes.fromhex((bounding_box_dict['bounding_wkb']))))}
-    session['globals_dict']=bounding_box_dict
-    session.modified = True
-    return_dict = {'geo_map': geo_dict}
-    return_dict.update(bounding_box_dict)
-    return return_dict
-
-
-def process_boundingbox(query, messages=None):
-    if query == None:
-        return None
-    if messages == None:
-        messages = []
-
-    ask_prompt = """You will receive an original bounding box coordinate list and an address. Based on the 
-    directional modifier (e.g., south, west, east, north, center) mentioned in the query for this address, you need to adjust 
-    the bounding box accordingly.
-
-     The output should be in JSON format as follows: 
-
-json
-{
-  "boundingbox": []
-}
+class QueryProcessor:
+    """
+    Optimized query processing class with caching and better error handling
+    """
+    
+    def __init__(self):
+        self.string_cache: Dict[str, str] = {}
+    
+    @cached()
+    def process_string(self, s: str) -> str:
         """
-    if messages == None:
-        messages = []
+        Process string by removing digits and leading colons
+        """
+        if not isinstance(s, str):
+            return str(s)
+        
+        processed = re.sub(r'\d+', '', s)
+        if processed.startswith(':'):
+            processed = processed[1:]
+        return processed.strip()
+    
+    @cached()
+    def has_middle_space(self, s: str) -> bool:
+        """
+        Check if string has space in the middle (not at ends)
+        """
+        if not isinstance(s, str) or len(s.strip()) < 2:
+            return False
+        
+        stripped = s.strip()
+        return ' ' in stripped[1:-1]
+    
+    @cached()
+    def extract_numbers(self, s: str) -> int:
+        """
+        Extract numbers from string with size modifiers
+        """
+        if not isinstance(s, str):
+            return 1
+        
+        numbers = re.findall(r'\d+', s)
+        modifier = -1 if 'small' in s.lower() else 1
+        
+        return int(numbers[0]) * modifier if numbers else modifier
 
-    messages.append(message_template('system', ask_prompt))
-    messages.append(message_template('user', str(query)))
-    result = chat_single(messages, 'json', 'gpt-4o-2024-05-13')
-    print("original", query)
-    print('modified', result)
-    return json.loads(result)['boundingbox']
+
+# Global query processor instance
+query_processor = QueryProcessor()
 
 
+# ============================================================================
+# Optimized Similarity and Matching Functions
+# ============================================================================
+
+class SimilarityCalculator:
+    """
+    Optimized similarity calculation with caching and parallel processing
+    """
+    
+    def __init__(self):
+        self.similarity_cache: Dict[str, List[str]] = {}
+    
+    @cached(lambda self, string, lst: f"partial_match:{string}:{hash(tuple(sorted(lst)))}")
+    def find_partial_matches(self, string: str, lst: List[str]) -> Set[str]:
+        """
+        Find partial string matches in list with optimization
+        """
+        if not string or not lst:
+            return set()
+        
+        string_lower = string.lower()
+        matches = set()
+        
+        # Use set operations for faster lookup
+        lst_set = {str(item).lower(): item for item in lst}
+        
+        # Exact match first
+        if string_lower in lst_set:
+            matches.add(lst_set[string_lower])
+            return matches
+        
+        # Partial matches
+        string_words = set(string_lower.split())
+        for item_lower, item_original in lst_set.items():
+            item_words = set(item_lower.split())
+            if string_words.intersection(item_words):
+                matches.add(item_original)
+        
+        return matches
+    
+    @cached()
+    def calculate_enhanced_similarity(
+        self, 
+        query: str, 
+        given_list: List[str], 
+        table_name: str,
+        similarity_threshold: float = 0.7
+    ) -> List[str]:
+        """
+        Enhanced similarity calculation with multiple strategies
+        """
+        if not query or not given_list:
+            return []
+        
+        # Strategy 1: Exact and partial matches
+        partial_matches = self.find_partial_matches(query, given_list)
+        if partial_matches:
+            return list(partial_matches)
+        
+        # Strategy 2: Vector similarity with caching
+        try:
+            vector_matches = calculate_similarity_chroma(
+                query=query, 
+                give_list=given_list, 
+                mode='fclass'
+            )[0]
+            
+            if vector_matches:
+                return list(vector_matches)
+        
+        except Exception as e:
+            safe_print(f"Vector similarity error: {e}")
+        
+        # Strategy 3: Fallback to OpenAI similarity
+        try:
+            openai_matches = calculate_similarity_openai(table_name, query)
+            if openai_matches:
+                return openai_matches
+        
+        except Exception as e:
+            safe_print(f"OpenAI similarity error: {e}")
+        
+        return []
+
+
+# Global similarity calculator instance
+similarity_calc = SimilarityCalculator()
+
+
+# ============================================================================
+# Optimized Main Processing Functions
+# ============================================================================
+
+class FeatureMatcher:
+    """
+    Optimized feature matching with better error handling and performance
+    """
+    
+    def __init__(self):
+        self.column_cache: Dict[str, str] = {}
+    
+    @cached()
+    def determine_column_name(self, statement: str, table_name: str) -> str:
+        """
+        Determine appropriate column name with caching
+        """
+        if not statement:
+            return 'fclass'
+        
+        statement_lower = statement.lower()
+        
+        # Quick keyword checks
+        if any(word in statement_lower for word in ['name', 'call']):
+            return 'name'
+        
+        if any(word in statement_lower for word in ['large', 'small', 'big']):
+            return 'area_num#'
+        
+        # Check table columns
+        try:
+            col_names = get_column_names(table_name)
+            for col_name in col_names:
+                if col_name in statement.split():
+                    return col_name
+        except Exception as e:
+            safe_print(f"Column lookup error: {e}")
+        
+        return 'fclass'
+    
+    @cached()
+    def judge_numeric_comparison(self, query_type: str) -> Union[int, bool]:
+        """
+        Judge if query involves numeric comparison
+        """
+        if not isinstance(query_type, str):
+            return False
+        
+        query_lower = query_type.lower()
+        
+        if any(word in query_lower for word in ['higher', 'lower', 'bigger', 'smaller']):
+            numbers = query_processor.extract_numbers(query_type)
+            if any(word in query_lower for word in ['higher', 'bigger']):
+                return abs(numbers)
+            else:
+                return -abs(numbers)
+        
+        return False
+    
+    def process_feature_matching(
+        self, 
+        query_feature: str, 
+        table_name: str, 
+        verbose: bool = False,
+        bounding_box: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Optimized feature matching with comprehensive error handling
+        """
+        try:
+            query_feature = query_feature.strip() if isinstance(query_feature, str) else str(query_feature)
+        except Exception as e:
+            raise ValueError(f"Invalid query feature: {e}")
+        
+        # Handle compound features
+        query_list = query_feature.split(" and ") if " and " in query_feature else [query_feature]
+        
+        # Initialize result structure
+        match_result: Dict[str, Any] = {
+            'non_area_col': {'fclass': set(), 'name': set()},
+            'area_num': None
+        }
+        
+        for query in query_list:
+            if not query.strip():
+                continue
+                
+            try:
+                self._process_single_query(
+                    query.strip(), 
+                    table_name, 
+                    match_result, 
+                    verbose, 
+                    bounding_box
+                )
+            except Exception as e:
+                safe_print(f"Error processing query '{query}': {e}")
+                continue
+        
+        if verbose:
+            safe_print(f"Match result: {match_result}")
+        
+        return match_result
+    
+    def _process_single_query(
+        self, 
+        query: str, 
+        table_name: str, 
+        match_result: Dict[str, Any],
+        verbose: bool,
+        bounding_box: Optional[Dict]
+    ) -> None:
+        """
+        Process single query with optimized logic
+        """
+        col_name = self.determine_column_name(query, table_name)
+        
+        if '#' not in col_name:  # Non-area column processing
+            self._process_non_area_column(
+                query, 
+                table_name, 
+                col_name, 
+                match_result, 
+                verbose, 
+                bounding_box
+            )
+        else:  # Area-related query
+            match_result['area_num'] = query_processor.extract_numbers(query)
+    
+    def _process_non_area_column(
+        self, 
+        query: str, 
+        table_name: str, 
+        col_name: str,
+        match_result: Dict[str, Any],
+        verbose: bool,
+        bounding_box: Optional[Dict]
+    ) -> None:
+        """
+        Process non-area column queries with optimization
+        """
+        if col_name not in match_result['non_area_col']:
+            match_result['non_area_col'][col_name] = set()
+        
+        # Check for table name similarity
+        if are_strings_similar(query, table_name):
+            match_result['non_area_col'][col_name].add('all')
+            return
+        
+        # Get attribute list
+        try:
+            given_list = ids_of_attribute(
+                table_name, 
+                col_name, 
+                bounding_box_coordinates=bounding_box
+            )
+        except Exception as e:
+            safe_print(f"Error getting attributes: {e}")
+            return
+        
+        # Clean query
+        cleaned_query = self._clean_query(query, table_name, col_name)
+        
+        # Check for numeric comparison
+        num_compare = self.judge_numeric_comparison(cleaned_query)
+        if num_compare:
+            compared_list = self._compare_numbers(given_list, num_compare)
+            match_result['non_area_col'][col_name].update(compared_list)
+            if verbose:
+                safe_print(f"Numeric comparison results: {compared_list}")
+            return
+        
+        # Find matches using optimized similarity calculation
+        matches = similarity_calc.calculate_enhanced_similarity(
+            cleaned_query, 
+            given_list, 
+            table_name
+        )
+        
+        if matches:
+            match_result['non_area_col'][col_name].update(set(matches))
+            if verbose:
+                safe_print(f"Found matches: {matches}")
+    
+    @cached()
+    def _clean_query(self, query: str, table_name: str, col_name: str) -> str:
+        """
+        Clean query by removing common stop words and table references
+        """
+        stop_words = ['named', 'is', 'which', 'where', 'has', 'call', 'called', table_name, col_name]
+        
+        for word in stop_words:
+            query = query.replace(word, '')
+        
+        return query.strip()
+    
+    @cached()
+    def _compare_numbers(self, lst: List[str], target_num: int) -> Set[str]:
+        """
+        Compare numbers in list with target number
+        """
+        result_set = set()
+        
+        for item in lst:
+            if str(item).isnumeric():
+                item_num = int(item)
+                if (target_num > 0 and item_num > abs(target_num)) or \
+                   (target_num < 0 and item_num < abs(target_num)):
+                    result_set.add(item)
+        
+        return result_set
+
+
+# Global feature matcher instance
+feature_matcher = FeatureMatcher()
+
+
+# ============================================================================
+# Optimized Geographic Processing Functions
+# ============================================================================
+
+class GeographicProcessor:
+    """
+    Optimized geographic processing with better error handling
+    """
+    
+    @cached()
+    def judge_geo_relation(self, query: str) -> Optional[Dict[str, Union[str, int]]]:
+        """
+        Judge geographic relation with caching and optimization
+        """
+        if not query:
+            return None
+        
+        query_clean = query.replace('with', '').strip().lower()
+        
+        # Quick pattern matching
+        relation_patterns = {
+            'around': {'type': 'buffer', 'num': 100},
+            'in': {'type': 'in', 'num': 0},
+            'contains': {'type': 'contains', 'num': 0},
+            'intersects': {'type': 'intersects', 'num': 0},
+            'under': {'type': 'contains', 'num': 0},
+            'on': {'type': 'in', 'num': 0}
+        }
+        
+        for pattern, relation in relation_patterns.items():
+            if pattern in query_clean:
+                return relation
+        
+        # Extract distance for buffer operations
+        distance_match = re.search(r'(\d+)\s*m', query_clean)
+        if distance_match and any(word in query_clean for word in ['around', 'near', 'close']):
+            return {'type': 'buffer', 'num': int(distance_match.group(1))}
+        
+        # Fallback to AI processing for complex queries
+        try:
+            return self._process_complex_geo_relation(query)
+        except Exception as e:
+            safe_print(f"Error processing geo relation: {e}")
+            return None
+    
+    def _process_complex_geo_relation(self, query: str) -> Optional[Dict[str, Union[str, int]]]:
+        """
+        Process complex geographic relations using AI
+        """
+        ask_prompt = """Analyze the geographic relationship in this query. Return JSON with:
+        {"geo_calculations": {"exist": true/false, "type": "buffer/in/contains/intersects", "num": distance}}
+        
+        Examples:
+        - "100m around" -> {"geo_calculations": {"exist": true, "type": "buffer", "num": 100}}
+        - "contains" -> {"geo_calculations": {"exist": true, "type": "contains", "num": 0}}
+        - "no relation" -> {"geo_calculations": {"exist": false}}
+        """
+        
+        messages = [
+            message_template('system', ask_prompt),
+            message_template('user', query)
+        ]
+        
+        try:
+            result = chat_single(messages, 'json')
+            json_result = json.loads(result)
+            
+            if 'geo_calculations' in json_result and json_result['geo_calculations']['exist']:
+                geo_calc = json_result['geo_calculations']
+                return {
+                    'type': geo_calc.get('type', 'intersects'),
+                    'num': geo_calc.get('num', 0)
+                }
+        
+        except Exception as e:
+            safe_print(f"AI geo processing error: {e}")
+        
+        return None
+    
+    def process_geographic_filter(
+        self, 
+        query: str, 
+        id_list_subject: Union[str, Dict], 
+        id_list_object: Union[str, Dict],
+        bounding_box: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Process geographic filtering with optimization
+        """
+        # Convert string inputs to ID lists if necessary
+        if isinstance(id_list_subject, str):
+            id_list_subject = self._get_entity_id_list(id_list_subject, bounding_box)
+        
+        if isinstance(id_list_object, str):
+            id_list_object = self._get_entity_id_list(id_list_object, bounding_box)
+        
+        # Check for negation
+        versa_sign = self._find_negation(query)
+        if versa_sign:
+            query = re.sub(r'\b(not|no|never|none)\b', '', query, flags=re.IGNORECASE).strip()
+        
+        # Get geographic relation
+        geo_relation = self.judge_geo_relation(query)
+        if not geo_relation:
+            return {'error': 'No geographical relation found in query.'}
+        
+        # Perform geographic calculation
+        try:
+            geo_result = geo_calculate(
+                id_list_subject, 
+                id_list_object,
+                geo_relation['type'], 
+                geo_relation['num'],
+                versa_sign=versa_sign,
+                bounding_box=bounding_box
+            )
+            
+            # Add target label information
+            if 'subject' in geo_result and 'id_list' in geo_result['subject']:
+                target_labels = self._get_labels_from_ids(geo_result['subject']['id_list'])
+                geo_result['geo_map']['target_label'] = list(target_labels)
+            
+            return geo_result
+        
+        except Exception as e:
+            safe_print(f"Geographic calculation error: {e}")
+            return {'error': f'Geographic calculation failed: {e}'}
+    
+    @cached()
+    def _find_negation(self, text: str) -> bool:
+        """
+        Find negation in text using spaCy with caching
+        """
+        if not text:
+            return False
+        
+        try:
+            doc = nlp(text)
+            return any(token.dep_ == 'neg' for token in doc)
+        except Exception as e:
+            safe_print(f"Negation detection error: {e}")
+            return False
+    
+    def _get_entity_id_list(self, entity: str, bounding_box: Optional[Dict] = None) -> Dict:
+        """
+        Get entity ID list with error handling
+        """
+        try:
+            return id_list_of_entity(entity, bounding_box=bounding_box)
+        except Exception as e:
+            safe_print(f"Entity ID list error: {e}")
+            return {'id_list': {}, 'table_name': ''}
+    
+    @cached()
+    def _get_labels_from_ids(self, id_list: Dict[str, Any]) -> Set[str]:
+        """
+        Extract labels from ID list with caching
+        """
+        if not isinstance(id_list, dict):
+            return set()
+        
+        labels = set()
+        for key in id_list.keys():
+            if isinstance(key, str) and key.count('_') >= 2:
+                # Extract label from ID format
+                parts = key.split('_')
+                if len(parts) >= 3:
+                    labels.add('_'.join(parts[:2]))
+        
+        return labels
+
+
+# Global geographic processor instance
+geo_processor = GeographicProcessor()
+
+
+# ============================================================================
+# Optimized Entity Processing Functions
+# ============================================================================
+
+class EntityProcessor:
+    """
+    Optimized entity processing with improved performance and error handling
+    """
+    
+    def __init__(self):
+        self.table_cache: Dict[str, str] = {}
+    
+    @cached()
+    def judge_table_name(self, query: str) -> Optional[Dict[str, str]]:
+        """
+        Judge appropriate table name with caching and optimization
+        """
+        if not query or not isinstance(query, str):
+            return None
+        
+        query_lower = query.lower()
+        
+        # Soil-related keywords
+        soil_keywords = ['planting', 'potatoes', 'tomatoes', 'strawberr', 'agriculture', 'soil', 'farming']
+        if any(keyword in query_lower for keyword in soil_keywords):
+            return {'database': 'soil'}
+        
+        # Check exact table name matches
+        query_words = set(query_lower.split())
+        
+        # Check similar table names first
+        if hasattr(self, 'similar_table_name_dict'):
+            for similar_name, actual_name in similar_table_name_dict.items():
+                if similar_name in query_words:
+                    return {'database': actual_name}
+        
+        # Check direct table names
+        for table_name in col_name_mapping_dict:
+            if table_name in query_words:
+                return {'database': table_name}
+        
+        # Special case for greenery
+        if 'greenery' in query_lower:
+            return {'database': 'area'}
+        
+        return None
+    
+    def process_entity_list(
+        self, 
+        query: str, 
+        verbose: bool = False, 
+        bounding_box: Optional[Dict] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Process entity list with optimized performance and comprehensive error handling
+        """
+        if not query:
+            return None
+        
+        # Normalize query
+        query = query.lower().replace("strasse", 'straße')
+        
+        # Get bounding box from session if not provided
+        if bounding_box is None:
+            bounding_box = session.get('globals_dict')
+        
+        # Update global dictionaries if bounding box is specified
+        if bounding_box:
+            self._update_global_dictionaries_for_bbox(bounding_box)
+        
+        # Check for specific table restrictions
+        table_restriction = self.judge_table_name(query)
+        if table_restriction:
+            safe_print(f"Table restriction detected: {table_restriction['database']}")
+            query += f" (Limited to table: {table_restriction['database']})"
+        
+        try:
+            # Use optimized agent-based search
+            return self._agent_based_search(query, verbose, bounding_box)
+        
+        except Exception as e:
+            safe_print(f"Error in entity processing: {e}")
+            return None
+    
+    def _update_global_dictionaries_for_bbox(self, bounding_box: Dict) -> None:
+        """
+        Update global dictionaries for bounding box with parallel processing
+        """
+        global all_fclass_set, all_name_set, fclass_dict_4_similarity, name_dict_4_similarity
+        
+        all_fclass_set.clear()
+        all_name_set.clear()
+        
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = []
+            
+            for table_name in col_name_mapping_dict:
+                # Submit fclass processing
+                futures.append(
+                    executor.submit(
+                        ids_of_attribute, 
+                        table_name, 
+                        'fclass', 
+                        bounding_box_coordinates=bounding_box
+                    )
+                )
+                
+                # Submit name processing (except for soil)
+                if table_name != 'soil':
+                    futures.append(
+                        executor.submit(
+                            ids_of_attribute, 
+                            table_name, 
+                            'name', 
+                            bounding_box_coordinates=bounding_box
+                        )
+                    )
+            
+            # Collect results
+            future_to_table = {}
+            for i, future in enumerate(futures):
+                table_idx = i // 2 if i % 2 == 0 else i // 2
+                table_name = list(col_name_mapping_dict.keys())[table_idx]
+                attr_type = 'fclass' if i % 2 == 0 else 'name'
+                future_to_table[future] = (table_name, attr_type)
+            
+            for future in as_completed(futures):
+                try:
+                    result_set = future.result()
+                    table_name, attr_type = future_to_table[future]
+                    
+                    if attr_type == 'fclass':
+                        fclass_dict_4_similarity[table_name] = result_set
+                        all_fclass_set.update(result_set)
+                    else:
+                        name_dict_4_similarity[table_name] = result_set
+                        all_name_set.update(result_set)
+                
+                except Exception as e:
+                    safe_print(f"Error updating dictionaries: {e}")
+    
+    def _agent_based_search(
+        self, 
+        query: str, 
+        verbose: bool, 
+        bounding_box: Optional[Dict]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Optimized agent-based search with improved error handling
+        """
+        system_prompt = """
+        You are an intelligent search agent. Use these optimized functions:
+        
+        1. calculate_similarity(query, column, table_name=None) - Vector similarity search
+        2. find_table_by_elements(elements, column) - Find table by elements  
+        3. ids_of_elements(table_name, col_type=[], col_name=[]) - Get filtered results
+        
+        Always store final results in 'final_id_list' variable.
+        Use proper error handling and optimization strategies.
+        """
+        
+        namespace = {
+            name: obj for name, obj in globals().items() 
+            if isinstance(obj, types.FunctionType)
+        }
+        namespace["final_id_list"] = []
+        
+        messages = messages_initial_template(system_prompt, query)
+        max_rounds = 5  # Reduced from 10 for better performance
+        
+        for round_num in range(1, max_rounds + 1):
+            try:
+                code_result = chat_single(messages, temperature=0.3)  # Lower temperature for consistency
+                messages.append(message_template('assistant', code_result))
+                
+                if 'python' in code_result:
+                    code_return = str(
+                        execute_and_display(
+                            extract_python_code(code_result),
+                            namespace
+                        )
+                    )
+                else:
+                    code_return = code_result
+                
+                messages.append(message_template('user', str(code_return)))
+                
+                # Check for completion
+                if 'final_id_list' in namespace and namespace["final_id_list"]:
+                    if 'traceback' not in str(code_return).lower():
+                        return self._merge_id_lists(namespace["final_id_list"])
+                
+                if verbose:
+                    safe_print(f"Round {round_num}: {code_result[:100]}...")
+                
+            except Exception as e:
+                safe_print(f"Search round {round_num} error: {e}")
+                continue
+        
+        return None
+    
+    @cached()
+    def _merge_id_lists(self, id_list_collection: List[Dict]) -> Dict[str, Any]:
+        """
+        Merge ID lists with caching and optimization
+        """
+        if not id_list_collection:
+            return {'id_list': {}, 'table_name': ''}
+        
+        if isinstance(id_list_collection, dict):
+            return id_list_collection
+        
+        merged_result = {'id_list': {}, 'table_name': ''}
+        
+        for item in id_list_collection:
+            if isinstance(item, dict):
+                if 'id_list' in item:
+                    merged_result['id_list'].update(item['id_list'])
+                if 'table_name' in item and not merged_result['table_name']:
+                    merged_result['table_name'] = item['table_name']
+        
+        return merged_result
+
+
+# Global entity processor instance
+entity_processor = EntityProcessor()
+
+
+# ============================================================================
+# Optimized Bounding Box Functions
+# ============================================================================
+
+class BoundingBoxManager:
+    """
+    Optimized bounding box management with caching and error handling
+    """
+    
+    def __init__(self):
+        self.bbox_cache: Dict[str, Dict[str, Any]] = {}
+    
+    @cached()
+    def set_bounding_box(self, region_name: str, query: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Set bounding box with caching and optimization
+        """
+        if not region_name:
+            session['globals_dict'] = None
+            return {'geo_map': ''}
+        
+        try:
+            # Get bounding box data
+            coords, wkb_hex, response_str = find_boundbox(region_name)
+            
+            bounding_box_dict = {
+                "bounding_box_region_name": region_name,
+                "bounding_coordinates": coords,
+                "bounding_wkb": wkb_hex
+            }
+            
+            # Create geo dictionary
+            geo_dict = {
+                region_name: wkb.loads(bytes.fromhex(wkb_hex))
+            }
+            
+            # Update session
+            session['globals_dict'] = bounding_box_dict
+            session.modified = True
+            
+            # Prepare return dictionary
+            return_dict = {'geo_map': geo_dict}
+            return_dict.update(bounding_box_dict)
+            
+            return return_dict
+        
+        except Exception as e:
+            safe_print(f"Bounding box error for {region_name}: {e}")
+            return {'geo_map': '', 'error': str(e)}
+    
+    @cached()
+    def process_bounding_box_query(self, query: str) -> Optional[List[float]]:
+        """
+        Process bounding box query with directional modifiers
+        """
+        if not query:
+            return None
+        
+        ask_prompt = """
+        Adjust bounding box coordinates based on directional modifiers in the query.
+        Return JSON: {"boundingbox": [coordinates]}
+        """
+        
+        try:
+            messages = [
+                message_template('system', ask_prompt),
+                message_template('user', str(query))
+            ]
+            
+            result = chat_single(messages, 'json', 'gpt-4o-2024-05-13')
+            result_data = json.loads(result)
+            
+            return result_data.get('boundingbox', [])
+        
+        except Exception as e:
+            safe_print(f"Bounding box query processing error: {e}")
+            return None
+
+
+# Global bounding box manager instance
+bbox_manager = BoundingBoxManager()
+
+
+# ============================================================================
+# Main Optimized API Functions
+# ============================================================================
+
+def pick_match(
+    query_feature: str, 
+    table_name: str, 
+    verbose: bool = False,
+    bounding_box: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """
+    Optimized main feature matching function
+    
+    Args:
+        query_feature: Feature query string
+        table_name: Target table name
+        verbose: Enable verbose logging
+        bounding_box: Optional bounding box filter
+    
+    Returns:
+        Dictionary containing match results
+    """
+    try:
+        return feature_matcher.process_feature_matching(
+            query_feature, 
+            table_name, 
+            verbose, 
+            bounding_box
+        )
+    except Exception as e:
+        safe_print(f"Feature matching error: {e}")
+        raise
+
+
+def id_list_of_entity(
+    query: str, 
+    verbose: bool = False, 
+    bounding_box: Optional[Dict] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Optimized entity ID list retrieval
+    
+    Args:
+        query: Entity query string
+        verbose: Enable verbose logging
+        bounding_box: Optional bounding box filter
+    
+    Returns:
+        Dictionary containing entity ID list
+    """
+    try:
+        return entity_processor.process_entity_list(query, verbose, bounding_box)
+    except Exception as e:
+        safe_print(f"Entity processing error: {e}")
+        return None
+
+
+def geo_filter(
+    query: str, 
+    id_list_subject: Union[str, Dict], 
+    id_list_object: Union[str, Dict],
+    bounding_box: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """
+    Optimized geographic filtering function
+    
+    Args:
+        query: Geographic query string
+        id_list_subject: Subject entity list
+        id_list_object: Object entity list
+        bounding_box: Optional bounding box filter
+    
+    Returns:
+        Dictionary containing geographic filter results
+    """
+    try:
+        return geo_processor.process_geographic_filter(
+            query, 
+            id_list_subject, 
+            id_list_object, 
+            bounding_box
+        )
+    except Exception as e:
+        safe_print(f"Geographic filtering error: {e}")
+        return {'error': str(e)}
+
+
+def set_bounding_box(region_name: str, query: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Optimized bounding box setting function
+    
+    Args:
+        region_name: Name of the region
+        query: Optional query string
+    
+    Returns:
+        Dictionary containing bounding box information
+    """
+    try:
+        return bbox_manager.set_bounding_box(region_name, query)
+    except Exception as e:
+        safe_print(f"Bounding box setting error: {e}")
+        return {'geo_map': '', 'error': str(e)}
+
+
+# ============================================================================
+# Backward Compatibility Functions
+# ============================================================================
+
+# Maintain backward compatibility with existing function names
+def error_test():
+    """Backward compatibility function"""
+    safe_print("Optimized error test function")
+    raise Exception("Test exception from optimized module")
+
+
+def vice_versa(query: str, messages: Optional[List] = None) -> str:
+    """
+    Optimized inverse query generation with caching
+    """
+    @cached()
+    def _generate_inverse(q: str) -> str:
+        ask_prompt = """
+        Rewrite input to inverse the judgement. Return JSON: {"result": "inverted statement"}
+        Examples:
+        - "good for agriculture" -> "bad for agriculture"
+        - "negative for planting" -> "positive for planting"
+        """
+        
+        try:
+            msgs = messages or []
+            msgs.extend([
+                message_template('system', ask_prompt),
+                message_template('user', q)
+            ])
+            
+            result = chat_single(msgs, 'json')
+            if isinstance(result, str):
+                json_result = json.loads(result)
+                return json_result.get('result', f'not {q}')
+        
+        except Exception as e:
+            safe_print(f"Inverse generation error: {e}")
+        
+        return f'not {q}'
+    
+    return _generate_inverse(query)
+
+
+# Additional backward compatibility functions
+judge_geo_relation = geo_processor.judge_geo_relation
+process_boundingbox = bbox_manager.process_bounding_box_query
+judge_table = entity_processor.judge_table_name
+
+# Legacy print function
+print_modify = safe_print
+
+
+# ============================================================================
+# Module Cleanup and Optimization
+# ============================================================================
+
+def clear_all_caches() -> None:
+    """
+    Clear all caches for memory management
+    """
+    performance_cache.clear()
+    
+    # Clear function-level caches
+    for obj in [query_processor, similarity_calc, feature_matcher, geo_processor, entity_processor, bbox_manager]:
+        if hasattr(obj, 'cache_clear'):
+            obj.cache_clear()
+
+
+def get_cache_stats() -> Dict[str, Any]:
+    """
+    Get cache statistics for monitoring
+    """
+    return {
+        'performance_cache_size': len(performance_cache._cache),
+        'global_sets_size': {
+            'all_fclass_set': len(all_fclass_set),
+            'all_name_set': len(all_name_set)
+        },
+        'dictionaries_size': {
+            'fclass_dict_4_similarity': len(fclass_dict_4_similarity),
+            'name_dict_4_similarity': len(name_dict_4_similarity)
+        }
+    }
+
+
+# ============================================================================
+# Module Initialization
+# ============================================================================
+
+if __name__ == "__main__":
+    safe_print("Optimized Ask Functions Agent module loaded successfully")
+    safe_print(f"Cache stats: {get_cache_stats()}")

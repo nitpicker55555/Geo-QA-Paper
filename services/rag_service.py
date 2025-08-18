@@ -26,8 +26,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 from dotenv import load_dotenv
 
-from ..core.geo_functions import *
-from .chat_py import *
+from core.geo_functions import *
+from services.chat_py import *
 
 # Load environment variables
 load_dotenv()
