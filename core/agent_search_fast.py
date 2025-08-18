@@ -36,18 +36,22 @@ from .ask_functions_agent import (
     calculate_similarity_chroma,
     name_cosin_list,
     find_keys_by_values,
-    ids_of_type,
     merge_dicts,
-    ids_of_attribute,
-    general_gpt_without_memory,
-    col_name_mapping_dict,
+    judge_table,
     all_fclass_set,
     all_name_set,
     fclass_dict_4_similarity,
-    name_dict_4_similarity,
-    similar_ori_table_name_dict,
-    judge_table
+    name_dict_4_similarity
 )
+
+from .geo_functions import (
+    ids_of_type,
+    ids_of_attribute,
+    col_name_mapping_dict,
+    similar_ori_table_name_dict
+)
+
+from services.chat_py import general_gpt_without_memory
 
 def _analyze_query_llm(query: str, logger: logging.Logger) -> Dict[str, Any]:
     """

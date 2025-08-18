@@ -328,7 +328,7 @@ def get_table_names() -> List[str]:
         with db_manager.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public';")
-                return [name[0] for name in cur.fetchall()]
+                return [name['tablename'] for name in cur.fetchall()]
     except psycopg2.Error as e:
         logger.error(f"Error getting table names: {e}")
         return []
@@ -348,7 +348,7 @@ def get_column_names(table_name: str) -> List[str]:
                     WHERE table_name=%s AND table_schema='public'
                 """
                 cur.execute(query, (col_name_mapping_dict[table_name]['graph_name'],))
-                return [name[0] for name in cur.fetchall()]
+                return [name['column_name'] for name in cur.fetchall()]
     except psycopg2.Error as e:
         logger.error(f"Error getting column names for {table_name}: {e}")
         return []
@@ -389,48 +389,59 @@ def cur_action(query: str, mode: str = 'query', max_retries: int = 3) -> Optiona
     return None
 
 # Optimized attribute retrieval with caching
-@lru_cache(maxsize=500)
 def ids_of_attribute(graph_name: str, specific_col: Optional[str] = None, 
                     bounding_box_coordinates: Optional[Any] = None) -> Set[str]:
-    """Optimized attribute retrieval with caching"""
+    """Optimized attribute retrieval with caching - wrapper to handle dict parameters"""
+    # Convert dict to tuple for hashing if needed
+    if isinstance(bounding_box_coordinates, dict):
+        if 'bounding_coordinates' in bounding_box_coordinates:
+            bounding_box_coordinates = tuple(bounding_box_coordinates['bounding_coordinates'])
+        else:
+            bounding_box_coordinates = None
+    elif isinstance(bounding_box_coordinates, list):
+        bounding_box_coordinates = tuple(bounding_box_coordinates)
+    
+    # Call the cached version
+    return _ids_of_attribute_cached(graph_name, specific_col, bounding_box_coordinates)
+
+@lru_cache(maxsize=500)
+def _ids_of_attribute_cached(graph_name: str, specific_col: Optional[str] = None, 
+                             bounding_box_coordinates: Optional[tuple] = None) -> Set[str]:
+    """Internal cached version of ids_of_attribute"""
     if graph_name not in col_name_mapping_dict:
         logger.warning(f"Unknown graph name: {graph_name}")
         return set()
     
-    try:
-        fclass = col_name_mapping_dict[graph_name]['fclass']
-        graph_name_modify = col_name_mapping_dict[graph_name]['graph_name'].lower()
-        
-        if specific_col and specific_col in col_name_mapping_dict[graph_name]:
-            fclass = col_name_mapping_dict[graph_name][specific_col]
-        
-        # Build bounding box query if provided
-        bounding_query_part = ""
-        if bounding_box_coordinates:
-            # Handle different bounding box formats
-            if isinstance(bounding_box_coordinates, dict) and 'bounding_coordinates' in bounding_box_coordinates:
-                coords = bounding_box_coordinates['bounding_coordinates']
-            elif isinstance(bounding_box_coordinates, (list, tuple)) and len(bounding_box_coordinates) == 4:
-                coords = bounding_box_coordinates
-            else:
-                coords = None
-            
-            if coords:
-                min_lat, max_lat, min_lon, max_lon = coords
-                bounding_query_part = f"ST_Intersects(geom, ST_MakeEnvelope({min_lon}, {min_lat}, {max_lon}, {max_lat}, {EPSG_WGS84}))"
-        
-        query = f"""
-            SELECT DISTINCT {fclass}
-            FROM {graph_name_modify}
-            {bounding_query_part}
-        """
-        
-        rows = cur_action(query, 'attribute')
-        return set(row[0] for row in rows if row[0] is not None) if rows else set()
-        
-    except Exception as e:
-        logger.error(f"Error in ids_of_attribute for {graph_name}: {e}")
-        return set()
+
+    fclass = col_name_mapping_dict[graph_name]['fclass']
+    graph_name_modify = col_name_mapping_dict[graph_name]['graph_name'].lower()
+
+    if specific_col and specific_col in col_name_mapping_dict[graph_name]:
+        fclass = col_name_mapping_dict[graph_name][specific_col]
+
+    # Build bounding box query if provided
+    bounding_query_part = ""
+    if bounding_box_coordinates:
+        # Handle different bounding box formats
+        if isinstance(bounding_box_coordinates, dict) and 'bounding_coordinates' in bounding_box_coordinates:
+            coords = bounding_box_coordinates['bounding_coordinates']
+        elif isinstance(bounding_box_coordinates, (list, tuple)) and len(bounding_box_coordinates) == 4:
+            coords = bounding_box_coordinates
+        else:
+            coords = None
+
+        if coords:
+            min_lat, max_lat, min_lon, max_lon = coords
+            bounding_query_part = f"ST_Intersects(geom, ST_MakeEnvelope({min_lon}, {min_lat}, {max_lon}, {max_lat}, {EPSG_WGS84}))"
+
+    query = f"""
+        SELECT DISTINCT {fclass}
+        FROM {graph_name_modify}
+        {bounding_query_part}
+    """
+
+    rows = cur_action(query, 'attribute')
+    return set(row[fclass] for row in rows if row[fclass] is not None) if rows else set()
 
 def judge_area(type_str: str) -> bool:
     """Optimized area judgment"""
@@ -503,11 +514,17 @@ def ids_of_type(graph_name: str, type_dict: Dict[str, Any],
         where_clause = " AND ".join(all_constraints) if all_constraints else ""
         
         # Build final query
-        final_query = f"""
-            {select_query}
-            FROM {graph_name_modify}
-            {where_clause}
-        """
+        if where_clause:
+            final_query = f"""
+                {select_query}
+                FROM {graph_name_modify}
+                WHERE {where_clause}
+            """
+        else:
+            final_query = f"""
+                {select_query}
+                FROM {graph_name_modify}
+            """
         
         # Execute query
         rows = cur_action(final_query)
@@ -550,19 +567,43 @@ def ids_of_type(graph_name: str, type_dict: Dict[str, Any],
         logger.error(f"Error in ids_of_type for {graph_name}: {e}")
         raise
 
-def process_query_results(rows: List[Tuple], graph_name: str) -> Dict[str, Any]:
+def process_query_results(rows: List[Any], graph_name: str) -> Dict[str, Any]:
     """Optimized query result processing with vectorization"""
     if not rows:
         return {}
     
-    # Convert to DataFrame for vectorized processing
-    if graph_name == 'soil':
-        df = pd.DataFrame(rows, columns=["name", "global_id", "geometry_hex"])
-        df["key"] = f"{graph_name}_" + df["name"].astype(str) + "_" + df["global_id"].astype(str)
+    # Handle both dictionary and tuple rows
+    if rows and isinstance(rows[0], dict):
+        # Convert dict rows to DataFrame directly
+        df = pd.DataFrame(rows)
+        
+        # Rename columns to match expected names based on graph_name
+        if graph_name == 'soil':
+            # For soil: leg_text as name, objectid as global_id, geom as geometry
+            if 'leg_text' in df.columns:
+                df.rename(columns={'leg_text': 'name', 'objectid': 'global_id', 'geom': 'geometry_hex'}, inplace=True)
+            df["key"] = f"{graph_name}_" + df["name"].astype(str) + "_" + df["global_id"].astype(str)
+        else:
+            # For other tables: source_table, type/fclass, name, osm_id, geom
+            if 'source_table' in df.columns:
+                df.rename(columns={'source_table': 'row_data', 'osm_id': 'global_id', 'geom': 'geometry_hex'}, inplace=True)
+            if 'type' in df.columns:
+                df.rename(columns={'type': 'empty'}, inplace=True)
+            elif 'fclass' in df.columns:
+                df.rename(columns={'fclass': 'empty'}, inplace=True)
+            
+            # Build the key
+            df["key"] = (f"{graph_name}_" + df.get("name", "").astype(str) + "_" + 
+                        df.get("empty", "").astype(str) + "_" + df["global_id"].astype(str))
     else:
-        df = pd.DataFrame(rows, columns=["row_data", "name", "empty", "global_id", "geometry_hex"])
-        df["key"] = (f"{graph_name}_" + df["name"].astype(str) + "_" + 
-                    df["empty"].astype(str) + "_" + df["global_id"].astype(str))
+        # Original tuple-based processing
+        if graph_name == 'soil':
+            df = pd.DataFrame(rows, columns=["name", "global_id", "geometry_hex"])
+            df["key"] = f"{graph_name}_" + df["name"].astype(str) + "_" + df["global_id"].astype(str)
+        else:
+            df = pd.DataFrame(rows, columns=["row_data", "name", "empty", "global_id", "geometry_hex"])
+            df["key"] = (f"{graph_name}_" + df["name"].astype(str) + "_" + 
+                        df["empty"].astype(str) + "_" + df["global_id"].astype(str))
     
     # Batch convert geometries
     valid_rows = df[df["geometry_hex"].notna()]
@@ -883,7 +924,7 @@ def get_attribute_by_column(name: str, mode: str) -> List[str]:
                 with conn.cursor() as cur:
                     cur.execute(query, (name,))
                     results = cur.fetchall()
-                    return {result[0] for result in results if result[0]}
+                    return {result[other_col_name] for result in results if result[other_col_name]}
                     
         except Exception as e:
             logger.warning(f"Error querying table {table}: {e}")
@@ -1414,14 +1455,11 @@ for table_name in col_name_mapping_dict:
     graph_name = col_name_mapping_dict[table_name]['graph_name']
     revers_mapping_dict[graph_name] = table_name
     
-    # Add all available columns to mapping
-    try:
-        columns = get_column_names(table_name)
-        for col in columns:
-            if col not in col_name_mapping_dict[table_name]:
-                col_name_mapping_dict[table_name][col] = col
-    except Exception as e:
-        logger.warning(f"Could not get columns for {table_name}: {e}")
+    columns = get_column_names(table_name)
+    for col in columns:
+        if col not in col_name_mapping_dict[table_name]:
+            col_name_mapping_dict[table_name][col] = col
+
 
 # Cleanup function for proper resource management
 def cleanup_resources():

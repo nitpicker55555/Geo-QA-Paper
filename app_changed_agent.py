@@ -428,8 +428,12 @@ class CodeProcessor:
     def process_code_for_execution(self, code_lines: str, session: Dict,
                                    sid: str) -> str:
         """Process code string and inject necessary modifications"""
-        lines = [line.strip() for line in code_lines.split('\n') if
-                 line.strip()]
+        # Split lines but keep empty lines for structure
+        lines = code_lines.split('\n')
+        # Filter out completely empty lines but keep indentation
+        filtered_lst = [item for item in lines if item.strip()]
+        lines = filtered_lst
+        
         new_lines = []
         variable_dict = {}
         i = 0
@@ -441,7 +445,7 @@ class CodeProcessor:
         ]
 
         while i < len(lines):
-            line = lines[i]
+            line = lines[i].strip()  # Strip only when processing
             i = self._process_single_line(line, lines, i, new_lines,
                                           variable_dict,
                                           function_patterns, session, sid)
@@ -482,7 +486,9 @@ class CodeProcessor:
                                          session: Dict, sid: str) -> int:
         """Handle line with variable assignment and function call"""
         variable_name = line.split('=')[0].strip()
-        full_function, next_index = self._collect_multiline_function(line,
+        # Pass the original line from all_lines to preserve formatting
+        original_line = all_lines[current_index].strip()
+        full_function, next_index = self._collect_multiline_function(original_line,
                                                                      all_lines,
                                                                      current_index)
 
@@ -508,7 +514,9 @@ class CodeProcessor:
                                             function_patterns: List[str],
                                             session: Dict, sid: str) -> int:
         """Handle function call without variable assignment"""
-        full_function, next_index = self._collect_multiline_function(line,
+        # Pass the original line from all_lines to preserve formatting
+        original_line = all_lines[current_index].strip()
+        full_function, next_index = self._collect_multiline_function(original_line,
                                                                      all_lines,
                                                                      current_index)
 
@@ -536,7 +544,7 @@ class CodeProcessor:
         current_index = start_index + 1
 
         while current_index < len(all_lines) and open_parens > close_parens:
-            line = all_lines[current_index]
+            line = all_lines[current_index].strip() if current_index < len(all_lines) else ""
             full_function += '\n' + line
             open_parens += line.count('(')
             close_parens += line.count(')')
@@ -602,11 +610,29 @@ class CodeProcessor:
         excluded_patterns = ['=', 'send_data', 'id_list_explain(', '#']
 
         if not any(pattern in last_line for pattern in excluded_patterns):
-            lines[-1] = f"print_process({last_line.strip()})"
+            lines[-1] = f"print_function({last_line.strip()})"
 
 
 # Initialize code processor
 code_processor = CodeProcessor(SessionManager())
+
+
+# Global functions for use in exec() context
+def send_data(data, mode="data", index="", sid=''):
+    """Global wrapper for WebSocketManager.send_data to be accessible in exec() context"""
+    return WebSocketManager.send_data(data, mode, index, sid)
+
+
+def print_function(var_name):
+    """Custom print function with length limiting."""
+    if len(str(var_name)) > 4000:
+        print(f"Output too long: {type(var_name).__name__}, length: {len(var_name)}")
+    else:
+        print(var_name)
+
+
+# Alias for backward compatibility
+print_process = print_function
 
 
 # WebSocket utilities
@@ -1242,11 +1268,19 @@ def _process_code_submission(user_input: str, messages: List[Dict], sid: str,
                 chat_response = chat_single(messages,
                                             "stream")  # Assuming this function exists
 
-                # Process streaming response
-                total_buffer, yield_additions = _process_streaming_response(
+                # Process streaming response and yield in real-time
+                total_buffer = ""
+                for char_output in _process_streaming_response_generator(
                     chat_response, current_mode
-                )
-                yield_list.extend(yield_additions)
+                ):
+                    if isinstance(char_output, tuple):
+                        # This is the final result
+                        total_buffer = char_output[0]
+                        yield_list.extend(char_output[1])
+                    else:
+                        # This is a character to yield
+                        yield char_output
+                        yield_list.append(char_output)
 
                 # Replace function calls if not in reasoning mode
                 if current_mode != 'reasoning':
@@ -1292,9 +1326,8 @@ def _process_code_submission(user_input: str, messages: List[Dict], sid: str,
         yield f"Error: {str(e)}\n"
 
 
-def _process_streaming_response(chat_response, current_mode: str) -> Tuple[
-    str, List[str]]:
-    """Process streaming response from AI with improved handling"""
+def _process_streaming_response_generator(chat_response, current_mode: str):
+    """Process streaming response from AI with improved handling - generator version"""
     total_buffer = ""
     yield_list = []
     line_buffer = ""
@@ -1321,7 +1354,52 @@ def _process_streaming_response(chat_response, current_mode: str) -> Tuple[
                     line_buffer = ""
                     continue
 
-                # Yield non-code content
+                # Yield non-code content character by character
+                if (not in_code_block and line_buffer) or line_buffer.startswith('#'):
+                    output_char = char.replace('#', '#><;').replace("'", '')
+                    yield output_char  # Yield character immediately
+
+                # Reset line buffer on newline
+                if '\n' in char:
+                    line_buffer = ""
+
+    except Exception as e:
+        print(f"Error processing streaming response: {e}")
+
+    # Return final result as tuple
+    yield (total_buffer, yield_list)
+
+
+def _process_streaming_response(chat_response, current_mode: str) -> Tuple[
+    str, List[str]]:
+    """Process streaming response from AI with improved handling - non-generator version for backward compatibility"""
+    total_buffer = ""
+    yield_list = []
+    line_buffer = ""
+    chunk_num = 0
+    in_code_block = False
+
+    try:
+        for chunk in chat_response:
+            if chunk and chunk.choices[0].delta.content:
+                char = ("\n" + chunk.choices[
+                    0].delta.content) if chunk_num == 0 else chunk.choices[
+                    0].delta.content
+                chunk_num += 1
+                total_buffer += char
+                line_buffer += char
+
+                # Handle code block detection
+                if "```python".startswith(line_buffer) and not in_code_block:
+                    in_code_block = True
+                    line_buffer = ""
+                    continue
+                elif "```".startswith(line_buffer) and in_code_block:
+                    in_code_block = False
+                    line_buffer = ""
+                    continue
+
+                # Collect non-code content
                 if (
                         not in_code_block and line_buffer) or line_buffer.startswith(
                         '#'):
@@ -1354,6 +1432,11 @@ def _execute_code_block(code: str, sid: str, messages: List[Dict],
         processed_code = code_processor.process_code_for_execution(code,
                                                                    session,
                                                                    sid)
+        
+        print(f"DEBUG: Processed code to execute:")
+        print("=" * 50)
+        print(processed_code)
+        print("=" * 50)
 
         # Execute code with output capture
         start_time = time.time()

@@ -32,8 +32,8 @@ from services.rag_service import (
     calculate_similarity_openai,
     calculate_similarity_chroma
 )
-from ..services.chat_py import *
-from ..utils.levenshtein import are_strings_similar
+from services.chat_py import *
+from utils.levenshtein import are_strings_similar
 from .geo_functions import *
 from .bounding_box import find_boundbox
 
@@ -49,10 +49,12 @@ nlp = spacy.load('en_core_web_sm')
 global_paring_dict: Dict[str, Any] = {}
 fclass_dict: Dict[str, Any] = {}
 name_dict: Dict[str, Any] = {}
-fclass_dict_4_similarity: Dict[str, Set[str]] = {}
-name_dict_4_similarity: Dict[str, Set[str]] = {}
+
+# Global sets and dictionaries for similarity matching
 all_fclass_set: Set[str] = set()
 all_name_set: Set[str] = set()
+fclass_dict_4_similarity: Dict[str, Set[str]] = {}
+name_dict_4_similarity: Dict[str, Set[str]] = {}
 
 
 # ============================================================================
@@ -133,11 +135,22 @@ def cached(cache_key_func: Optional[Callable] = None):
 # Optimized Data Structure Initialization
 # ============================================================================
 
-def initialize_similarity_dictionaries() -> None:
+def initialize_similarity_dictionaries(use_db: bool = True) -> None:
     """
     Initialize similarity dictionaries with optimized performance
+    
+    Args:
+        use_db: If True, query database for actual values. If False, use empty sets.
     """
     global fclass_dict_4_similarity, name_dict_4_similarity, all_fclass_set, all_name_set
+    
+    if not use_db:
+        # Initialize with empty sets for testing without database
+        for table_name in col_name_mapping_dict:
+            fclass_dict_4_similarity[table_name] = set()
+            if table_name != 'soil':
+                name_dict_4_similarity[table_name] = set()
+        return
     
     # Use ThreadPoolExecutor for parallel processing
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -157,14 +170,17 @@ def initialize_similarity_dictionaries() -> None:
         
         # Collect results
         for future in as_completed(futures):
-            table_name, attribute_type, attribute_set = future.result()
-            
-            if attribute_type == 'fclass':
-                fclass_dict_4_similarity[table_name] = attribute_set
-                all_fclass_set.update(attribute_set)
-            else:
-                name_dict_4_similarity[table_name] = attribute_set
-                all_name_set.update(attribute_set)
+            try:
+                table_name, attribute_type, attribute_set = future.result()
+                
+                if attribute_type == 'fclass':
+                    fclass_dict_4_similarity[table_name] = attribute_set
+                    all_fclass_set.update(attribute_set)
+                else:
+                    name_dict_4_similarity[table_name] = attribute_set
+                    all_name_set.update(attribute_set)
+            except Exception as e:
+                print(f"Error processing {table_name} {attribute_type}: {e}")
 
 
 def _process_table_attributes(table_name: str, attribute_type: str) -> Tuple[str, str, Set[str]]:
@@ -175,8 +191,19 @@ def _process_table_attributes(table_name: str, attribute_type: str) -> Tuple[str
     return table_name, attribute_type, attribute_set
 
 
-# Initialize dictionaries on module load
-initialize_similarity_dictionaries()
+# Simple initialization similar to reference file
+# This populates the dictionaries without database access during import
+try:
+    # Initialize with empty sets first
+    for table_name in col_name_mapping_dict:
+        fclass_dict_4_similarity[table_name] = set()
+        if table_name != 'soil':
+            name_dict_4_similarity[table_name] = set()
+    
+    # The actual data will be loaded lazily when needed
+    # or can be explicitly initialized by calling initialize_similarity_dictionaries(use_db=True)
+except Exception as e:
+    print(f"Error during module initialization: {e}")
 
 
 # ============================================================================
@@ -743,6 +770,108 @@ class GeographicProcessor:
 
 # Global geographic processor instance
 geo_processor = GeographicProcessor()
+
+
+# ============================================================================
+# Name Similarity Functions
+# ============================================================================
+
+def name_cosin_list(query: str, name_set: Set[str]) -> Tuple[List[str], bool]:
+    """
+    Find similar names using cosine similarity
+    
+    Args:
+        query: The name to search for
+        name_set: Set of names to search within
+        
+    Returns:
+        Tuple of (list of matching names, success flag)
+    """
+    try:
+        if not query or not name_set:
+            return [], False
+            
+        # Convert set to list for calculate_similarity_chroma
+        name_list = list(name_set)
+        
+        # Use the existing calculate_similarity_chroma function
+        matches, success = calculate_similarity_chroma(
+            query=query,
+            give_list=name_list,
+            mode='name',
+            results_num=10  # Return top 10 matches
+        )
+        
+        # Filter matches to only include those in the original set
+        if matches:
+            filtered_matches = [m for m in matches if m in name_set]
+            return filtered_matches, True
+        
+        return [], False
+        
+    except Exception as e:
+        safe_print(f"Error in name_cosin_list: {e}")
+        return [], False
+
+
+def find_keys_by_values(d: Dict, elements: Union[List, Set]) -> Dict:
+    """
+    Find keys in dictionary that contain matching values from elements
+    
+    Args:
+        d: Dictionary to search in
+        elements: Elements to find in dictionary values
+        
+    Returns:
+        Dictionary with keys and their matched elements
+    """
+    result = {}
+    for key, values in d.items():
+        matched_elements = [element for element in elements if element in values]
+        if matched_elements:
+            result[key] = matched_elements
+    return result
+
+
+def merge_dicts(dict_list: Union[Dict, List[Dict]]) -> Dict:
+    """
+    Merge multiple dictionaries into one
+    
+    Args:
+        dict_list: Single dictionary or list of dictionaries to merge
+        
+    Returns:
+        Merged dictionary
+    """
+    if isinstance(dict_list, dict):
+        dict_list = [dict_list]
+    
+    result = {}
+    for d in dict_list:
+        if not isinstance(d, dict):
+            continue
+        for key, subdict in d.items():
+            if key not in result:
+                result[key] = subdict.copy() if isinstance(subdict, dict) else subdict
+            else:
+                if isinstance(result[key], dict) and isinstance(subdict, dict):
+                    result[key].update(subdict)
+                else:
+                    result[key] = subdict
+    return result
+
+
+def judge_table(table_name: str) -> bool:
+    """
+    Judge if a table name is valid
+    
+    Args:
+        table_name: Name of the table to check
+        
+    Returns:
+        True if table is valid, False otherwise
+    """
+    return table_name in col_name_mapping_dict
 
 
 # ============================================================================
