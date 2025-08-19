@@ -1213,6 +1213,7 @@ def submit():
         messages = json_data.get('messages', [])
         sid = json_data.get('sid', '').strip()
         current_mode = json_data.get('currentMode', '').strip()
+        agent_mode = json_data.get('agentMode', 'analyzer').strip()  # New parameter
 
         if not user_input:
             return jsonify({'error': 'No input text provided'}), 400
@@ -1229,9 +1230,17 @@ def submit():
             processed_response = []
 
             try:
-                yield from _process_code_submission(
-                    user_input, messages, sid, current_mode, processed_response
-                )
+                # Check if explainer mode is selected
+                if agent_mode == 'explainer':
+                    # Use explainer agent for Cypher-based processing
+                    yield from _process_explainer_submission(
+                        user_input, messages, sid, processed_response
+                    )
+                else:
+                    # Use traditional analyzer mode
+                    yield from _process_code_submission(
+                        user_input, messages, sid, current_mode, processed_response
+                    )
             except Exception as e:
                 print(f"Error in code processing: {e}")
                 yield f"Error: {str(e)}\n"
@@ -1244,6 +1253,39 @@ def submit():
     except Exception as e:
         print(f"Error in submit route: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+
+def _process_explainer_submission(user_input: str, messages: List[Dict], sid: str,
+                                 processed_response: List[Dict]):
+    """Process submission using explainer agent for Cypher-based queries"""
+    try:
+        from core.ask_functions_agent import explainer_agent
+        
+        # Show processing status
+        yield "Processing your question with Explainer Agent...\n\n"
+        
+        # Call explainer agent
+        result = explainer_agent(user_input, messages)
+        
+        # Yield the result
+        yield result
+        
+        # Add to processed response
+        processed_response.append({
+            'role': 'assistant',
+            'content': result
+        })
+        
+        # Send final response via WebSocket
+        WebSocketManager.send_data(processed_response, sid=sid)
+        
+        # Log interaction
+        _log_interaction(user_input, sid, [result], processed_response)
+        
+    except Exception as e:
+        error_msg = f"Error in explainer submission: {str(e)}"
+        print(error_msg)
+        yield f"\n\nError: {error_msg}\n"
 
 
 def _process_code_submission(user_input: str, messages: List[Dict], sid: str,

@@ -10,7 +10,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import database configuration
-from config.database_config import POSTGRES_CONFIG, POSTGRES_CONN_STRING
+from config.database_config import POSTGRES_CONFIG
 
 # Import geo_functions methods
 from core.geo_functions import ids_of_type, geo_calculate, global_id_geo

@@ -74,6 +74,10 @@
     <!--    <input type="button" id="upload-btn" class="your-button-class" value="Upload" onclick="document.getElementById('file-input').click();" />-->
 
     <input type="button" id="upload-btn" class="your-button-class" value="Upload" onclick="document.getElementById('file-input-upload').click();" />
+    <select id="modeSelector" class="your-button-class" style="padding: 8px; background: white; color: black; border: 1px solid #ccc; border-radius: 4px;">
+        <option value="analyzer" selected>Analyzer</option>
+        <option value="explainer">Explainer</option>
+    </select>
     <textarea type="text" id="inputField" class="your-button-class" placeholder="Input question..."></textarea>
     <button id="confirmButton" class="your-button-class">submit</button>
     <button id="reasoning_mode" class="your-button-class">Reasoning</button>
@@ -764,19 +768,24 @@ If user ask you to draw a diagram, please always use the true variable in previo
                 let lastResponseElement = $(".message-bubble .response").last();
                 lastResponseElement.empty();
                 let escapedMessage;
+                
+                // Check if explainer mode is selected
+                const selectedMode = document.getElementById('modeSelector').value;
 
-                // 处理以><;.开头的行
-                message = message.split('\n').map(line => {
-                    if (line.startsWith('#><;')) {
-                        if ((line.includes('englischer garten')||line.includes('Englischer Garten'))&&line.includes('ID')) {
-                            return `<div class="custom-rect"><span class="plan-label">Step</span>${escapeHtml(line.substring(4))}</div>`;
+                // 处理以><;.开头的行 (only for analyzer mode)
+                if (selectedMode === 'analyzer') {
+                    message = message.split('\n').map(line => {
+                        if (line.startsWith('#><;')) {
+                            if ((line.includes('englischer garten')||line.includes('Englischer Garten'))&&line.includes('ID')) {
+                                return `<div class="custom-rect"><span class="plan-label">Step</span>${escapeHtml(line.substring(4))}</div>`;
+                            } else {
+                                return `<div class="custom-rect"><span class="plan-label">Step</span>${escapeHtml(line.substring(4))}</div>`;
+                            }
                         } else {
-                            return `<div class="custom-rect"><span class="plan-label">Step</span>${escapeHtml(line.substring(4))}</div>`;
+                            return line;
                         }
-                    } else {
-                        return line;
-                    }
-                }).join('\n');
+                    }).join('\n');
+                }
 
                 // 处理流式消息中的代码块
                 let codeMarkCount = (message.match(/```/g) || []).length;
@@ -876,12 +885,13 @@ async function process_input(userInput) {
         document.getElementById('inputField').value = '';
 
         try {
+            const selectedMode = document.getElementById('modeSelector').value;
             const response = await fetch('/submit', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ text: userInput, 'messages': messages, 'new_message': userInput, 'sid': sid, 'currentMode': currentMode })
+                body: JSON.stringify({ text: userInput, 'messages': messages, 'new_message': userInput, 'sid': sid, 'currentMode': currentMode, 'agentMode': selectedMode })
             });
 
             if (!response.ok) {
@@ -902,8 +912,16 @@ async function process_input(userInput) {
                 }
                 const chunk = decoder.decode(value, { stream: true });
                 final_response_text += chunk;
-                // Directly render the accumulated text as HTML
-                lastResponseElement.html(marked.parse(final_response_text));
+                
+                // Check if explainer mode
+                const selectedMode = document.getElementById('modeSelector').value;
+                if (selectedMode === 'explainer') {
+                    // For explainer mode, render markdown directly
+                    lastResponseElement.html(marked.parse(final_response_text));
+                } else {
+                    // For analyzer mode, use the existing rendering
+                    lastResponseElement.html(marked.parse(final_response_text));
+                }
                 chatWindow.scrollTop(chatWindow.prop('scrollHeight'));
             }
 

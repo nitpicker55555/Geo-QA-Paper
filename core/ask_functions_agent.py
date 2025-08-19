@@ -1411,6 +1411,286 @@ def get_cache_stats() -> Dict[str, Any]:
 
 
 # ============================================================================
+# Explainer Agent for Cypher Query Generation
+# ============================================================================
+
+# Cache for graph structure to avoid repeated queries
+_graph_structure_cache = {
+    'structure': None,
+    'last_update': None
+}
+
+def get_neo4j_graph_structure():
+    """
+    Get Neo4j graph structure with caching
+    Returns cached structure if available and recent (within 1 hour)
+    """
+    import time
+    from neo4j import GraphDatabase
+    from config.database_config import NEO4J_CONFIG
+    
+    # Check if cache is valid (less than 1 hour old)
+    if (_graph_structure_cache['structure'] is not None and 
+        _graph_structure_cache['last_update'] is not None and
+        time.time() - _graph_structure_cache['last_update'] < 3600):
+        return _graph_structure_cache['structure']
+    
+    # Connect to Neo4j to get schema information
+    driver = GraphDatabase.driver(
+        NEO4J_CONFIG['uri'],
+        auth=(NEO4J_CONFIG['user'], NEO4J_CONFIG['password'])
+    )
+    
+    graph_structure = {}
+    rel_details = []
+    relationships = []
+    
+    try:
+        with driver.session() as neo4j_session:
+            # Get all node labels
+            labels_result = neo4j_session.run("CALL db.labels()")
+            labels = [record[0] for record in labels_result]
+            
+            # Get properties for each label
+            for label in labels:
+                # Get sample node to extract properties
+                sample_query = f"MATCH (n:{label}) RETURN properties(n) LIMIT 5"
+                sample_result = neo4j_session.run(sample_query)
+                
+                all_properties = set()
+                sample_values = {}
+                for record in sample_result:
+                    if record[0]:
+                        all_properties.update(record[0].keys())
+                        # Collect sample values for key properties
+                        for key in ['fclass', 'type', 'leg_text', 'name']:
+                            if key in record[0] and record[0][key]:
+                                if key not in sample_values:
+                                    sample_values[key] = []
+                                if record[0][key] not in sample_values[key]:
+                                    sample_values[key].append(str(record[0][key])[:50])
+                
+                # Get count of nodes
+                count_query = f"MATCH (n:{label}) RETURN COUNT(n) as count"
+                count_result = neo4j_session.run(count_query)
+                count = count_result.single()['count']
+                
+                graph_structure[label] = {
+                    'properties': list(all_properties),
+                    'count': count,
+                    'sample_values': sample_values
+                }
+            
+            # Get relationship types
+            rel_result = neo4j_session.run("CALL db.relationshipTypes()")
+            relationships = [record[0] for record in rel_result]
+            
+            # Get relationship details
+            for rel_type in relationships[:10]:  # Limit to first 10 relationship types
+                rel_query = f"""
+                MATCH (a)-[r:{rel_type}]->(b)
+                RETURN labels(a)[0] as from_label, labels(b)[0] as to_label, COUNT(r) as count
+                LIMIT 5
+                """
+                rel_detail_result = neo4j_session.run(rel_query)
+                for record in rel_detail_result:
+                    rel_details.append({
+                        'type': rel_type,
+                        'from': record['from_label'],
+                        'to': record['to_label'],
+                        'count': record['count']
+                    })
+    
+    except Exception as e:
+        safe_print(f"Error querying graph structure: {e}")
+    finally:
+        driver.close()
+    
+    # Cache the result
+    result = {
+        'graph_structure': graph_structure,
+        'relationships': relationships,
+        'rel_details': rel_details
+    }
+    _graph_structure_cache['structure'] = result
+    _graph_structure_cache['last_update'] = time.time()
+    
+    return result
+
+
+def explainer_agent(query: str, messages: Optional[List[Dict]] = None) -> str:
+    """
+    Explainer agent that generates and executes Cypher queries based on user questions
+    
+    Args:
+        query: User's natural language question
+        messages: Conversation history for context
+        
+    Returns:
+        Natural language answer based on Cypher query results
+    """
+    try:
+        from neo4j import GraphDatabase
+        from config.database_config import NEO4J_CONFIG
+        
+        # Initialize messages if not provided
+        if messages is None:
+            messages = []
+        
+        # Get graph structure (cached)
+        structure_info = get_neo4j_graph_structure()
+        graph_structure = structure_info['graph_structure']
+        relationships = structure_info['relationships']
+        rel_details = structure_info['rel_details']
+        
+        # Build detailed system prompt with actual graph structure
+        structure_description = "Actual graph structure in the database:\n\n"
+        structure_description += "Node Labels and Properties:\n"
+        for label, info in graph_structure.items():
+            structure_description += f"- **{label}** ({info['count']} nodes)\n"
+            if info['properties']:
+                structure_description += f"  Properties: {', '.join(info['properties'])}\n"
+            if info.get('sample_values'):
+                for prop, values in info['sample_values'].items():
+                    if values:
+                        structure_description += f"  Sample {prop} values: {', '.join(values[:3])}\n"
+        
+        structure_description += "\nRelationship Types:\n"
+        if rel_details:
+            for rel in rel_details[:10]:
+                structure_description += f"- {rel['type']}: {rel['from']} -> {rel['to']} ({rel['count']} relationships)\n"
+        elif relationships:
+            structure_description += f"- {', '.join(relationships[:10])}\n"
+        
+        # System prompt for Cypher generation
+        system_prompt = f"""You are a Neo4j database expert. Based on the user's question, you need to:
+1. Generate appropriate Cypher queries to retrieve data from the Neo4j database
+2. Execute the Cypher queries
+3. Analyze the results and provide a clear answer to the user's question
+
+{structure_description}
+
+Important Guidelines:
+- Use MATCH patterns to find nodes and relationships
+- Use WHERE clauses for filtering by properties
+- Use RETURN to specify what data to retrieve
+- Always limit results to avoid overwhelming responses (LIMIT 100)
+- For counting, use COUNT() function
+- Node labels are case-sensitive as shown above
+- Property names are case-sensitive
+- For spatial relationships, use the actual relationship types found in the database
+
+Common Query Patterns:
+- Find all nodes of a type: MATCH (n:label) RETURN n LIMIT 10
+- Filter by property: MATCH (n:label) WHERE n.property = 'value' RETURN n
+- Count nodes: MATCH (n:label) RETURN COUNT(n) as count
+- Find relationships: MATCH (a)-[r:REL_TYPE]->(b) RETURN a, r, b LIMIT 10
+- Find connected nodes: MATCH (a:label1)-[r]-(b:label2) RETURN a, b LIMIT 10
+
+Generate Cypher query in this format:
+```cypher
+YOUR_CYPHER_QUERY_HERE
+```
+
+Then explain the results in natural language."""
+        
+        # Add system prompt to messages
+        messages_for_query = [
+            message_template('system', system_prompt),
+            message_template('user', query)
+        ]
+        
+        # Add conversation history if available
+        if messages:
+            # Keep only the last few messages for context
+            recent_messages = messages[-4:] if len(messages) > 4 else messages
+            messages_for_query.extend(recent_messages)
+            messages_for_query.append(message_template('user', query))
+        
+        # Generate Cypher query using GPT
+        response = chat_single(messages_for_query, temperature=0.3)
+        
+        # Extract Cypher query from response
+        cypher_match = re.search(r'```cypher\s*(.*?)\s*```', response, re.DOTALL)
+        
+        if cypher_match:
+            cypher_query = cypher_match.group(1).strip()
+            safe_print(f"Generated Cypher query: {cypher_query}")
+            
+            # Execute Cypher query using Neo4j driver
+            try:
+                driver = GraphDatabase.driver(
+                    NEO4J_CONFIG['uri'],
+                    auth=(NEO4J_CONFIG['user'], NEO4J_CONFIG['password'])
+                )
+                
+                results = []
+                with driver.session() as neo4j_session:
+                    result = neo4j_session.run(cypher_query)
+                    for record in result:
+                        results.append(dict(record))
+                
+                driver.close()
+                
+                # Format results for GPT to analyze
+                result_summary = f"Query executed successfully. Found {len(results)} results."
+                if results:
+                    # Show sample of results
+                    sample_size = min(10, len(results))
+                    result_summary += f"\nSample results (showing {sample_size} of {len(results)}):\n"
+                    for i, record in enumerate(results[:sample_size]):
+                        # Format record for display
+                        formatted_record = {}
+                        for key, value in record.items():
+                            if value is not None:
+                                if isinstance(value, (str, int, float, bool)):
+                                    formatted_record[key] = value
+                                else:
+                                    formatted_record[key] = str(value)[:100]  # Truncate long values
+                        result_summary += f"{i+1}. {formatted_record}\n"
+                
+                # Generate natural language answer based on results
+                answer_messages = [
+                    message_template('system', 'Based on the Cypher query results, provide a clear and concise answer to the user\'s question. Be specific about the data found.'),
+                    message_template('user', f"Question: {query}\n\nCypher Query: {cypher_query}\n\nResults: {result_summary}")
+                ]
+                
+                final_answer = chat_single(answer_messages, temperature=0.3)
+                
+                # Format the response with Cypher query visible
+                formatted_response = f"{final_answer}\n\n**Cypher Query Used:**\n```cypher\n{cypher_query}\n```"
+                
+                # Add to message history
+                messages.append(message_template('assistant', formatted_response))
+                
+                return formatted_response
+                
+            except Exception as e:
+                error_msg = f"Error executing Cypher query: {str(e)}"
+                safe_print(error_msg)
+                
+                # Try to provide helpful error feedback
+                error_messages = [
+                    message_template('system', 'The Cypher query failed. Analyze the error and provide a helpful response to the user.'),
+                    message_template('user', f"Query: {query}\nCypher: {cypher_query}\nError: {error_msg}")
+                ]
+                
+                error_response = chat_single(error_messages, temperature=0.3)
+                messages.append(message_template('assistant', error_response))
+                
+                return error_response
+        else:
+            # No Cypher query found in response, return the response as is
+            messages.append(message_template('assistant', response))
+            return response
+            
+    except Exception as e:
+        error_msg = f"Error in explainer_agent: {str(e)}"
+        safe_print(error_msg)
+        return f"I encountered an error while processing your question: {error_msg}"
+
+
+# ============================================================================
 # Module Initialization
 # ============================================================================
 

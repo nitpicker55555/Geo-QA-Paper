@@ -119,10 +119,7 @@ class DatabaseManager:
             self._pool.closeall()
             logger.info("Database pool closed")
 
-# Global instances
-from config.database_config import POSTGRES_CONN_STRING
-conn_params = POSTGRES_CONN_STRING
-db_manager = DatabaseManager(conn_params)
+# Global instances - Moved after config import below
 
 # Optimized global dictionaries with LRU cache
 @lru_cache(maxsize=CACHE_SIZE)
@@ -176,11 +173,16 @@ global_id_attribute = {}
 from config.database_config import (
     COL_NAME_MAPPING_DICT as col_name_mapping_dict,
     SIMILAR_TABLE_MAPPINGS as similar_ori_table_name_dict,
-    POSTGRES_CONN_STRING,
+    POSTGRES_CONFIG,
     EPSG_WGS84,
     EPSG_UTM32N,
     EPSG_UTM33N
 )
+
+# Initialize database manager with POSTGRES_CONFIG
+# Convert POSTGRES_CONFIG dict to connection string
+conn_params = " ".join([f"{k}='{v}'" for k, v in POSTGRES_CONFIG.items()])
+db_manager = DatabaseManager(conn_params)
 
 def map_keys_to_values(similar_col_name_dict: Dict[str, str]) -> Dict[str, str]:
     """Optimized key-value mapping"""
@@ -1038,11 +1040,86 @@ def transfer_id_list_2_geo_dict(id_list: List[str], raw_dict: Optional[Dict] = N
         logger.error(f"Error in transfer_id_list_2_geo_dict: {e}")
         return {}
 
+# Function to update Neo4j graph with uploaded table data
+def update_neo4j_with_uploaded_table(table_name: str, json_data: Dict[str, Any]) -> bool:
+    """Update Neo4j graph database with uploaded table data"""
+    try:
+        from neo4j import GraphDatabase
+        from config.database_config import NEO4J_CONFIG
+        
+        # Connect to Neo4j
+        driver = GraphDatabase.driver(
+            NEO4J_CONFIG['uri'],
+            auth=(NEO4J_CONFIG['user'], NEO4J_CONFIG['password'])
+        )
+        
+        logical_table_name = table_name  # Without 'uploaded_' prefix
+        actual_table_name = f'uploaded_{table_name}'
+        
+        with driver.session() as session:
+            # Create table node and link to database
+            session.run("""
+                MATCH (d:Database {name: 'postgres'})
+                MERGE (t:Table {name: $table_name})
+                MERGE (d)-[:DATABASE_TABLE]->(t)
+                MERGE (t)-[:TABLE_DATABASE]->(d)
+            """, table_name=logical_table_name)
+            
+            # Add FClass values if present
+            if 'fclass' in json_data and json_data['fclass']:
+                fclass_values = list(set(json_data['fclass']))  # Get unique values
+                session.run("""
+                    UNWIND $fclass_list AS fclass_value
+                    MERGE (f:FClass {value: fclass_value})
+                    WITH f, $table_name AS table_name
+                    MATCH (t:Table {name: table_name})
+                    MERGE (t)-[:TABLE_FCLASS]->(f)
+                    MERGE (f)-[:FCLASS_TABLE]->(t)
+                """, table_name=logical_table_name, fclass_list=fclass_values)
+                logger.info(f"Added {len(fclass_values)} FClass nodes for {logical_table_name}")
+            
+            # Add Name values if present
+            if 'name' in json_data and json_data['name']:
+                name_values = list(set([n for n in json_data['name'] if n]))  # Get unique non-null values
+                if name_values:
+                    session.run("""
+                        UNWIND $name_list AS name_value
+                        MERGE (n:Name {value: name_value})
+                        WITH n, $table_name AS table_name
+                        MATCH (t:Table {name: table_name})
+                        MERGE (t)-[:TABLE_NAME]->(n)
+                        MERGE (n)-[:NAME_TABLE]->(t)
+                    """, table_name=logical_table_name, name_list=name_values)
+                    logger.info(f"Added {len(name_values)} Name nodes for {logical_table_name}")
+            
+            # Create actual table node with data (for tracking uploaded tables)
+            session.run("""
+                MERGE (ut:UploadedTable {name: $actual_table_name, logical_name: $logical_table_name})
+                SET ut.created_at = timestamp()
+            """, actual_table_name=actual_table_name, logical_table_name=logical_table_name)
+        
+        driver.close()
+        logger.info(f"Successfully updated Neo4j graph with table {logical_table_name}")
+        
+        # Clear the graph structure cache to force refresh
+        try:
+            from core.ask_functions_agent import _graph_structure_cache
+            _graph_structure_cache['structure'] = None
+            _graph_structure_cache['last_update'] = None
+        except:
+            pass
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error updating Neo4j with uploaded table: {e}")
+        return False
+
 # Optimized table creation from JSON
 def create_table_from_json(json_data: Dict[str, Any], table_name: str) -> None:
-    """Optimized table creation with batch insert"""
+    """Optimized table creation with batch insert and Neo4j update"""
     
-    table_name = f'uploaded_{table_name}'
+    actual_table_name = f'uploaded_{table_name}'
     
     try:
         # Infer column types more intelligently
@@ -1065,7 +1142,7 @@ def create_table_from_json(json_data: Dict[str, Any], table_name: str) -> None:
             with conn.cursor() as cur:
                 # Create table
                 create_query = sql.SQL("CREATE TABLE {} ({})").format(
-                    sql.Identifier(table_name),
+                    sql.Identifier(actual_table_name),
                     sql.SQL(", ").join(
                         sql.SQL("{} {}").format(sql.Identifier(col[0]), sql.SQL(col[1]))
                         for col in columns
@@ -1078,7 +1155,7 @@ def create_table_from_json(json_data: Dict[str, Any], table_name: str) -> None:
                     rows = list(zip(*json_data.values()))
                     
                     insert_query = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
-                        sql.Identifier(table_name),
+                        sql.Identifier(actual_table_name),
                         sql.SQL(", ").join(map(sql.Identifier, json_data.keys())),
                         sql.SQL(", ").join([sql.Placeholder()] * len(json_data))
                     )
@@ -1086,7 +1163,10 @@ def create_table_from_json(json_data: Dict[str, Any], table_name: str) -> None:
                     # Use batch insert for better performance
                     cur.executemany(insert_query, rows)
                 
-                logger.info(f"Table {table_name} created successfully with {len(rows)} rows")
+                logger.info(f"Table {actual_table_name} created successfully with {len(rows)} rows")
+        
+        # Update Neo4j graph with the new table data
+        update_neo4j_with_uploaded_table(table_name, json_data)
                 
     except Exception as e:
         logger.error(f"Error creating table {table_name}: {e}")
@@ -1209,7 +1289,7 @@ def get_uploaded_column_values(column_name: str) -> List[str]:
         return []
 
 def del_uploaded_sql() -> None:
-    """Optimized deletion of uploaded tables with memory cleanup"""
+    """Optimized deletion of uploaded tables with memory cleanup and Neo4j cleanup"""
     
     try:
         with db_manager.get_connection() as conn:
@@ -1238,6 +1318,62 @@ def del_uploaded_sql() -> None:
                             
                     except Exception as e:
                         logger.error(f"Error dropping table {table_name}: {e}")
+        
+        # Clean up Neo4j graph for uploaded tables
+        if uploaded_table_names:
+            try:
+                from neo4j import GraphDatabase
+                from config.database_config import NEO4J_CONFIG
+                
+                driver = GraphDatabase.driver(
+                    NEO4J_CONFIG['uri'],
+                    auth=(NEO4J_CONFIG['user'], NEO4J_CONFIG['password'])
+                )
+                
+                with driver.session() as session:
+                    for table_name in uploaded_table_names:
+                        # Delete table nodes and their relationships
+                        session.run("""
+                            MATCH (t:Table {name: $table_name})
+                            OPTIONAL MATCH (t)-[r]-()
+                            DELETE r, t
+                        """, table_name=table_name)
+                        
+                        # Delete UploadedTable tracking nodes
+                        session.run("""
+                            MATCH (ut:UploadedTable {logical_name: $table_name})
+                            DELETE ut
+                        """, table_name=table_name)
+                        
+                        logger.info(f"Cleaned up Neo4j nodes for table: {table_name}")
+                    
+                    # Clean up orphaned FClass and Name nodes (not connected to any table)
+                    session.run("""
+                        MATCH (f:FClass)
+                        WHERE NOT (f)-[:FCLASS_TABLE]->(:Table)
+                        DELETE f
+                    """)
+                    
+                    session.run("""
+                        MATCH (n:Name)
+                        WHERE NOT (n)-[:NAME_TABLE]->(:Table)
+                        DELETE n
+                    """)
+                    
+                    logger.info("Cleaned up orphaned Neo4j nodes")
+                
+                driver.close()
+                
+                # Clear the graph structure cache
+                try:
+                    from core.ask_functions_agent import _graph_structure_cache
+                    _graph_structure_cache['structure'] = None
+                    _graph_structure_cache['last_update'] = None
+                except:
+                    pass
+                    
+            except Exception as e:
+                logger.error(f"Error cleaning up Neo4j: {e}")
         
         # Clean up memory structures
         cleanup_memory_structures(uploaded_table_names)
