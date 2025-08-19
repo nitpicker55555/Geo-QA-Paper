@@ -77,7 +77,6 @@ def find_boundbox(name):
     if name in predefined_locations:
         bounding_box = predefined_locations[name]
     else:
-        # Query using GPT for unknown locations
         bounding_box = process_query(name)
     
     # Convert to float coordinates

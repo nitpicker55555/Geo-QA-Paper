@@ -12,9 +12,6 @@ POSTGRES_CONFIG = {
     "host": "localhost",
     "password": "9417941"
 }
-
-POSTGRES_CONN_STRING = "dbname='osm_database' user='postgres' host='localhost' password='9417941'"
-
 # Neo4j connection parameters
 NEO4J_CONFIG = {
     "uri": "neo4j://127.0.0.1:7687",
