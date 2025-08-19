@@ -68,7 +68,7 @@ class Neo4jMapper:
         """
         with self.driver.session() as session:
             query = """
-                MATCH (t:Table {name: $table_name})-[:HAS_FCLASS]->(f:FClass)
+                MATCH (t:Table {name: $table_name})-[:TABLE_FCLASS]->(f:FClass)
                 RETURN f.value as fclass
             """
             result = session.run(query, table_name=table_name)
@@ -87,7 +87,7 @@ class Neo4jMapper:
         """
         with self.driver.session() as session:
             query = """
-                MATCH (t:Table {name: $table_name})-[:HAS_NAME]->(n:Name)
+                MATCH (t:Table {name: $table_name})-[:TABLE_NAME]->(n:Name)
                 RETURN n.value as name
             """
             result = session.run(query, table_name=table_name)
@@ -135,7 +135,7 @@ class Neo4jMapper:
         """
         with self.driver.session() as session:
             query = """
-                MATCH (t:Table)-[:HAS_FCLASS]->(f:FClass {value: $fclass_value})
+                MATCH (f:FClass {value: $fclass_value})-[:FCLASS_TABLE]->(t:Table)
                 RETURN t.name as table_name
             """
             result = session.run(query, fclass_value=fclass_value)
@@ -153,7 +153,7 @@ class Neo4jMapper:
         """
         with self.driver.session() as session:
             query = """
-                MATCH (t:Table)-[:HAS_NAME]->(n:Name {value: $name_value})
+                MATCH (n:Name {value: $name_value})-[:NAME_TABLE]->(t:Table)
                 RETURN t.name as table_name
             """
             result = session.run(query, name_value=name_value)
@@ -227,49 +227,6 @@ class Neo4jMapper:
                 result = session.run(query, search_term=search_term, limit=limit)
                 return [(record['name'], record['score']) for record in result]
     
-    def get_entities_by_fclass_and_table(self, table_name: str, fclass_value: str, 
-                                         limit: Optional[int] = None) -> List[str]:
-        """
-        Get entity IDs for a specific fclass value in a table
-        
-        Args:
-            table_name: Name of the table
-            fclass_value: The fclass value
-            limit: Optional limit on results
-            
-        Returns:
-            List of entity OSM IDs
-        """
-        with self.driver.session() as session:
-            query = """
-                MATCH (e:Entity {table_name: $table_name})-[:HAS_FCLASS]->(f:FClass {value: $fclass_value})
-                RETURN e.osm_id as osm_id
-                """ + (f"LIMIT {limit}" if limit else "")
-            
-            result = session.run(query, table_name=table_name, fclass_value=fclass_value)
-            return [record['osm_id'] for record in result]
-    
-    def get_entities_by_name_and_table(self, table_name: str, name_value: str,
-                                       limit: Optional[int] = None) -> List[str]:
-        """
-        Get entity IDs for a specific name value in a table
-        
-        Args:
-            table_name: Name of the table
-            name_value: The name value
-            limit: Optional limit on results
-            
-        Returns:
-            List of entity OSM IDs
-        """
-        with self.driver.session() as session:
-            query = """
-                MATCH (e:Entity {table_name: $table_name})-[:HAS_NAME]->(n:Name {value: $name_value})
-                RETURN e.osm_id as osm_id
-                """ + (f"LIMIT {limit}" if limit else "")
-            
-            result = session.run(query, table_name=table_name, name_value=name_value)
-            return [record['osm_id'] for record in result]
     
     def build_similarity_dictionaries(self) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
         """
