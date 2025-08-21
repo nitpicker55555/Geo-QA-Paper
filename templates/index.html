@@ -25,7 +25,164 @@
     <script src="../static/js/map_container.js"></script>
     <script src="../static/js/firework.js"></script>
     <style>
+        /* Code Result Block Styles */
+        .code-result-wrapper {
+            margin: 15px 0;
+            border: none;
+            border-radius: 8px;
+            overflow: visible;
+            background: #ffffff;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+            transition: all 0.3s ease;
+        }
 
+        .night-mode .code-result-wrapper {
+            background: #1e1e1e;
+            border: none;
+            box-shadow: 0 8px 30px rgba(255, 255, 255, 0.25);
+        }
+
+        .code-result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            color: #000000;
+            border-bottom: 1px solid #e1e4e8;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.3s ease;
+        }
+
+        .night-mode .code-result-header {
+            background: #2d2d2d;
+            color: #ffffff;
+            border-bottom: 1px solid #444;
+        }
+
+        .code-result-header:hover {
+            background: #e9ecef;
+        }
+
+        .night-mode .code-result-header:hover {
+            background: #3a3a3a;
+        }
+
+        .code-result-header.collapsed {
+            border-bottom: none;
+            border-radius: 8px;
+        }
+
+        .night-mode .code-result-header.collapsed {
+            border-bottom: none;
+        }
+
+        .code-result-title {
+            font-weight: 700;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .code-result-meta {
+            font-size: 12px;
+            opacity: 0.8;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .code-result-toggle {
+            font-size: 18px;
+            transition: transform 0.3s ease;
+            margin-left: 12px;
+        }
+
+        .code-result-header.collapsed .code-result-toggle {
+            transform: rotate(-90deg);
+        }
+
+        .code-result-content {
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 16px;
+            background: #ffffff;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            transition: all 0.3s ease;
+            display: block;
+        }
+
+        .night-mode .code-result-content {
+            background: #1e1e1e;
+            color: #e0e0e0;
+        }
+
+        .code-result-content.collapsed {
+            display: none !important;
+        }
+
+        /* Scrollbar styling for code result */
+        .code-result-content::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .code-result-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .night-mode .code-result-content::-webkit-scrollbar-track {
+            background: #3a3a3a;
+        }
+
+        .code-result-content::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        .code-result-content::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Animation for expand/collapse */
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .code-result-wrapper.new-result {
+            animation: slideDown 0.4s ease;
+        }
+
+        /* Loading indicator for code running */
+        .code-running-indicator {
+            padding: 10px 16px;
+            background: #f0f9ff;
+            border-left: 4px solid #3b82f6;
+            color: #1e40af;
+            font-style: italic;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+
+        .night-mode .code-running-indicator {
+            background: #1e3a5f;
+            color: #93c5fd;
+        }
     </style>
 
 
@@ -764,6 +921,142 @@ If user ask you to draw a diagram, please always use the true variable in previo
                 chatWindow.append(responseMessageElement);
                 chatWindow.scrollTop(chatWindow.prop('scrollHeight'));
             }
+            // Function to process code result blocks
+            function processCodeResultBlock(html) {
+                // Parse code-result-block elements
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = html;
+                
+                const codeBlocks = tempDiv.querySelectorAll('code-result-block');
+                codeBlocks.forEach(block => {
+                    const lines = block.getAttribute('data-lines');
+                    const chars = block.getAttribute('data-chars');
+                    const time = block.getAttribute('data-time');
+                    const header = block.querySelector('code-result-header');
+                    const content = block.querySelector('code-result-content');
+                    
+                    if (header && content) {
+                        // Create wrapper HTML string with inline onclick
+                        const uniqueId = 'code-result-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                        
+                        const wrapperHTML = `
+                            <div class="code-result-wrapper new-result">
+                                <div class="code-result-header" onclick="toggleCodeResult('${uniqueId}')" style="cursor: pointer;">
+                                    <div class="code-result-title">
+                                        Code Output
+                                    </div>
+                                    <div style="display: flex; align-items: center;">
+                                        <span class="code-result-meta">${lines} lines | ${chars} chars | ${time}s</span>
+                                        <span class="code-result-toggle">▼</span>
+                                    </div>
+                                </div>
+                                <div class="code-result-content" id="${uniqueId}" style="display: block;">
+                                    ${escapeHtml(content.textContent)}
+                                </div>
+                            </div>
+                        `;
+                        
+                        // Create a new element from the HTML string
+                        const newWrapper = document.createElement('div');
+                        newWrapper.innerHTML = wrapperHTML;
+                        
+                        // Replace the original block with the new wrapper
+                        block.parentNode.replaceChild(newWrapper.firstElementChild, block);
+                    }
+                });
+                
+                return tempDiv.innerHTML;
+            }
+            
+            // Global function to toggle code result visibility
+            window.toggleCodeResult = function(contentId) {
+                const content = document.getElementById(contentId);
+                const header = content.previousElementSibling;
+                
+                if (!content || !header) return;
+                
+                const isCollapsed = content.style.display === 'none';
+                
+                if (isCollapsed) {
+                    // Expand
+                    content.style.display = 'block';
+                    header.classList.remove('collapsed');
+                } else {
+                    // Collapse
+                    content.style.display = 'none';
+                    header.classList.add('collapsed');
+                }
+            };
+            
+            // New function for streaming render - only shows #><; lines
+            function renderStreamingResponse(message, lastResponseElement) {
+                const selectedMode = document.getElementById('modeSelector').value;
+                
+                if (selectedMode === 'analyzer') {
+                    // Filter and process only #><; lines for display
+                    const lines = message.split('\n');
+                    const stepLines = [];
+                    let inCodeBlock = false;
+                    let codeResultBlock = '';
+                    let inCodeResultBlock = false;
+                    
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        
+                        // Track code blocks to ignore #><; inside them
+                        if (line.includes('```')) {
+                            inCodeBlock = !inCodeBlock;
+                        }
+                        
+                        // Check for code-result-block start
+                        if (line.includes('<code-result-block')) {
+                            inCodeResultBlock = true;
+                            codeResultBlock = line + '\n';
+                            continue;
+                        }
+                        
+                        // Accumulate code-result-block content
+                        if (inCodeResultBlock) {
+                            codeResultBlock += line + '\n';
+                            if (line.includes('</code-result-block>')) {
+                                // Process and add the complete code result block
+                                const processedBlock = processCodeResultBlock(codeResultBlock);
+                                stepLines.push(processedBlock);
+                                inCodeResultBlock = false;
+                                codeResultBlock = '';
+                            }
+                            continue;
+                        }
+                        
+                        // Only show #><; lines that are not in code blocks
+                        if (line.startsWith('#><;') && !inCodeBlock) {
+                            const stepContent = escapeHtml(line.substring(4));
+                            stepLines.push(`<div class="custom-rect"><span class="plan-label">Step</span>${stepContent}</div>`);
+                        }
+                        
+                        // Show Code running message
+                        if (line.includes('`Code running...`')) {
+                            stepLines.push('<div class="code-running-indicator">Code running...</div>');
+                        }
+                    }
+                    
+                    // Update display with filtered content
+                    if (stepLines.length > 0) {
+                        lastResponseElement.html(stepLines.join('\n'));
+                    } else {
+                        lastResponseElement.html('<div style="color: #999;">Processing...</div>');
+                    }
+                } else {
+                    // For explainer mode, process code result blocks in markdown
+                    let processedMessage = message;
+                    if (message.includes('<code-result-block')) {
+                        processedMessage = processCodeResultBlock(message);
+                    }
+                    lastResponseElement.html(marked.parse(processedMessage));
+                }
+            }
+            
+            // Original function kept for final processing and map-button setup
             function addResponseMessage(message) {
                 let lastResponseElement = $(".message-bubble .response").last();
                 lastResponseElement.empty();
@@ -913,21 +1206,53 @@ async function process_input(userInput) {
                 const chunk = decoder.decode(value, { stream: true });
                 final_response_text += chunk;
                 
-                // Check if explainer mode
-                const selectedMode = document.getElementById('modeSelector').value;
-                if (selectedMode === 'explainer') {
-                    // For explainer mode, render markdown directly
-                    lastResponseElement.html(marked.parse(final_response_text));
-                } else {
-                    // For analyzer mode, use the existing rendering
-                    lastResponseElement.html(marked.parse(final_response_text));
-                }
+                // Use the new streaming render function that only shows #><; lines
+                renderStreamingResponse(final_response_text, lastResponseElement);
                 chatWindow.scrollTop(chatWindow.prop('scrollHeight'));
             }
 
-            // After the stream is complete, do a final render with the full logic
-            // to handle any special formatting that might have been missed.
-            addResponseMessage(final_response_text);
+            // After streaming is complete, process map buttons
+            // The WebSocket has already populated map_button_dict during execution
+            // Now we need to convert the custom-rect elements to map-buttons where applicable
+            
+            // Process map buttons after a short delay to ensure DOM is updated
+            setTimeout(() => {
+                const lastElement = document.querySelector('.message-bubble .response:last-child');
+                if (lastElement) {
+                    const customRects = lastElement.querySelectorAll('.custom-rect');
+                    customRects.forEach(rect => {
+                        if (rect.className !== 'map-button' && !rect.classList.contains('map-button')) {
+                            const divClone = rect.cloneNode(true);
+                            
+                            // Remove span elements to get clean text
+                            const span = divClone.querySelector('.plan-label');
+                            if (span) span.remove();
+                            const span_map = divClone.querySelector('.plan-label-map');
+                            if (span_map) span_map.remove();
+                            
+                            const desiredText = divClone.textContent.trim();
+                            
+                            // Check if this text has associated map data
+                            if (desiredText in map_button_dict) {
+                                console.log(desiredText, 'Converting to map button');
+                                rect.className = 'map-button';
+                                
+                                // Add Map label
+                                const planLabel = document.createElement('span');
+                                planLabel.className = 'plan-label-map';
+                                planLabel.textContent = 'Map';
+                                rect.appendChild(planLabel);
+                                
+                                // Add click handler
+                                rect.addEventListener('click', function() {
+                                    console.log('Map button clicked:', desiredText);
+                                    updateMapDataAndFitBounds(map, map_button_dict[desiredText]);
+                                });
+                            }
+                        }
+                    });
+                }
+            }, 100);
 
             // Only push messages to history if not in auto test mode
             if (!isTestRunning) {

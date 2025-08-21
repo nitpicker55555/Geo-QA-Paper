@@ -97,7 +97,7 @@ client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 # Initialize SocketIO with optimized settings
 socketio = SocketIO(
     app,
-    manage_session=True,
+    manage_session=True,  # SocketIO needs to manage session for exec() to work properly
     async_mode='threading',
     cors_allowed_origins="*"
 )
@@ -108,19 +108,21 @@ class OutputCapture:
     """Thread-safe output capture utility"""
 
     def __init__(self):
-        self.output = StringIO()
+        self.output = None
         self.original_stdout = sys.stdout
 
     @contextmanager
     def capture(self):
         """Context manager for capturing stdout"""
+        # Create a new StringIO for each capture session
+        self.output = StringIO()
         sys.stdout = self.output
         try:
             yield self.output
         finally:
+            # Restore stdout but don't clear the output yet
+            # We need to read it first with getvalue()
             sys.stdout = self.original_stdout
-            self.output.truncate(0)
-            self.output.seek(0)
 
 
 output_capture = OutputCapture()
@@ -202,7 +204,11 @@ class SessionManager:
 
     @staticmethod
     def initialize_session() -> None:
-        """Initialize session variables with proper defaults"""
+        """Initialize session variables with proper defaults
+
+        Only initializes globals_dict if it doesn't exist or is None.
+        Preserves user-set bounding box across all requests.
+        """
         default_globals = {
             'bounding_box_region_name': 'Munich',
             'bounding_coordinates': [48.061625, 48.248098, 11.360777,
@@ -210,8 +216,58 @@ class SessionManager:
             'bounding_wkb': '01030000000100000005000000494C50C3B7B82640D9CEF753E3074840494C50C3B7B82640FC19DEACC11F484019E76F4221722740FC19DEACC11F484019E76F4221722740D9CEF753E3074840494C50C3B7B82640D9CEF753E3074840'
         }
 
-        if 'globals_dict' not in session:
+        # Debug logging
+        current_region = session.get('globals_dict', {}).get(
+            'bounding_box_region_name', 'None') if session.get(
+            'globals_dict') else 'None'
+        user_set_flag = session.get('user_set_bounding_box', False)
+
+        # Only initialize if:
+        # 1. Session is completely new (globals_dict not in session)
+        # 2. globals_dict is None (was explicitly cleared)
+        # 3. BUT NOT if user has explicitly set a bounding box
+        condition1 = 'globals_dict' not in session
+        condition2 = session.get('globals_dict') is None and not user_set_flag
+
+        print(f"\n  [DECISION LOGIC]")
+        print(f"    'globals_dict' not in session: {condition1}")
+        print(
+            f"    globals_dict is None: {session.get('globals_dict') is None}")
+        print(f"    user_set_bounding_box: {user_set_flag}")
+        print(f"    Will initialize: {condition1 or condition2}")
+
+        if condition1 or condition2:
+            print(f"\n  >>> ACTION: INITIALIZING with default Munich <<<")
+            print(f"      Previous region: {current_region}")
+            print(f"      User set flag: {user_set_flag}")
             session['globals_dict'] = default_globals
+            session['session_initialized'] = True
+            # Don't mark as user-set when using defaults
+            session['user_set_bounding_box'] = False
+            print(f"      Set globals_dict to Munich")
+            print(f"      Set user_set_bounding_box to False")
+        else:
+            print(f"\n  >>> ACTION: KEEPING existing session <<<")
+            print(f"      Current region: {current_region}")
+            print(f"      User set flag: {user_set_flag}")
+            # If globals_dict is None but user had set it, don't reinitialize
+            if session.get('globals_dict') is None and user_set_flag:
+                print(
+                    f"      WARNING: globals_dict is None but user_set_bounding_box is True")
+
+        # Ensure session is marked as modified so it gets saved
+        session.modified = True
+
+        print(f"\n  [AFTER INIT]")
+        final_region = session.get('globals_dict', {}).get(
+            'bounding_box_region_name') if session.get(
+            'globals_dict') else None
+        print(f"    Final bounding box: {final_region}")
+        print(
+            f"    Final user_set_bounding_box: {session.get('user_set_bounding_box', False)}")
+        print(f"    Session modified flag: {session.modified}")
+        print("=" * 70)
+
         if 'col_name_mapping_dict' not in session:
             session['col_name_mapping_dict'] = {}
 
@@ -338,16 +394,42 @@ class ResponseFormatter:
         if re.search(error_pattern, result_str):
             return {'error': result_str}
 
-        length = ResponseFormatter._get_result_length(result_str)
-        attention = ResponseFormatter._get_attention_message(length)
+        # Process result for better display
+        lines = result_str.split('\n')
+        processed_lines = []
+        max_line_length = 150  # Maximum characters per line before truncation
+        max_lines = 100  # Maximum number of lines to display
 
-        formatted_result = f"""
-<details>
-    <summary>`Code result: Length:{length}, Run_time:{round(run_time, 2)}s`</summary>
-       {result_str}
-</details>
-{attention}
-"""
+        # Process each line individually
+        for i, line in enumerate(lines[:max_lines]):
+            if len(line) > max_line_length:
+                # Truncate long lines but keep the beginning
+                processed_lines.append(f"{line[:max_line_length]}...")
+            else:
+                # Keep short lines intact
+                processed_lines.append(line)
+
+        # Add truncation notice if needed
+        if len(lines) > max_lines:
+            processed_lines.append(
+                f"\n... ({len(lines) - max_lines} more lines)")
+
+        processed_result = '\n'.join(processed_lines)
+
+        # Calculate metadata
+        total_lines = len(lines)
+        total_chars = len(result_str)
+
+        # Create a custom formatted output for frontend display
+        formatted_result = f"""<code-result-block data-lines="{total_lines}" data-chars="{total_chars}" data-time="{round(run_time, 3)}">
+<code-result-header>
+<span class="code-result-title">📊 Code Output</span>
+<span class="code-result-meta">{total_lines} lines | {total_chars} chars | {round(run_time, 3)}s</span>
+</code-result-header>
+<code-result-content>
+{processed_result}
+</code-result-content>
+</code-result-block>"""
         return {'normal': formatted_result}
 
     @staticmethod
@@ -433,7 +515,7 @@ class CodeProcessor:
         # Filter out completely empty lines but keep indentation
         filtered_lst = [item for item in lines if item.strip()]
         lines = filtered_lst
-        
+
         new_lines = []
         variable_dict = {}
         i = 0
@@ -488,9 +570,10 @@ class CodeProcessor:
         variable_name = line.split('=')[0].strip()
         # Pass the original line from all_lines to preserve formatting
         original_line = all_lines[current_index].strip()
-        full_function, next_index = self._collect_multiline_function(original_line,
-                                                                     all_lines,
-                                                                     current_index)
+        full_function, next_index = self._collect_multiline_function(
+            original_line,
+            all_lines,
+            current_index)
 
         # Inject bounding box if needed
         full_function = self._inject_bounding_box_if_needed(full_function,
@@ -516,9 +599,10 @@ class CodeProcessor:
         """Handle function call without variable assignment"""
         # Pass the original line from all_lines to preserve formatting
         original_line = all_lines[current_index].strip()
-        full_function, next_index = self._collect_multiline_function(original_line,
-                                                                     all_lines,
-                                                                     current_index)
+        full_function, next_index = self._collect_multiline_function(
+            original_line,
+            all_lines,
+            current_index)
 
         # Inject bounding box if needed
         full_function = self._inject_bounding_box_if_needed(full_function,
@@ -544,7 +628,8 @@ class CodeProcessor:
         current_index = start_index + 1
 
         while current_index < len(all_lines) and open_parens > close_parens:
-            line = all_lines[current_index].strip() if current_index < len(all_lines) else ""
+            line = all_lines[current_index].strip() if current_index < len(
+                all_lines) else ""
             full_function += '\n' + line
             open_parens += line.count('(')
             close_parens += line.count(')')
@@ -624,11 +709,44 @@ def send_data(data, mode="data", index="", sid=''):
 
 
 def print_function(var_name):
-    """Custom print function with length limiting."""
-    if len(str(var_name)) > 4000:
-        print(f"Output too long: {type(var_name).__name__}, length: {len(var_name)}")
-    else:
-        print(var_name)
+    """Custom print function with enhanced formatting for better display."""
+    try:
+        var_str = str(var_name)
+
+        # Handle different data types for better formatting
+        if isinstance(var_name, (list, tuple)):
+            if len(var_name) > 100:
+                # For large lists/tuples, show summary
+                print(f"[{type(var_name).__name__}] Length: {len(var_name)}")
+                print(f"First 10 items: {var_name[:10]}")
+                if len(var_name) > 10:
+                    print(f"... and {len(var_name) - 10} more items")
+            else:
+                # For smaller lists, pretty print them
+                import pprint
+                pprint.pprint(var_name, width=80, compact=False)
+        elif isinstance(var_name, dict):
+            if len(var_name) > 50:
+                # For large dicts, show summary
+                print(f"[Dictionary] {len(var_name)} keys")
+                print(f"First 10 keys: {list(var_name.keys())[:10]}")
+            else:
+                # For smaller dicts, pretty print them
+                import pprint
+                pprint.pprint(var_name, width=80, compact=False)
+        elif len(var_str) > 4000:
+            # For very long strings or other types
+            print(
+                f"[{type(var_name).__name__}] Output too long (length: {len(var_str)})")
+            print(f"First 500 characters:")
+            print(var_str[:500])
+            print("...")
+        else:
+            # For normal output, just print it
+            print(var_name)
+    except Exception as e:
+        print(f"Error in print_function: {e}")
+        print(f"Type: {type(var_name).__name__}")
 
 
 # Alias for backward compatibility
@@ -758,7 +876,7 @@ please give the json format like below:
 
     @staticmethod
     def convert_to_wkt_4326(geojson_list: List[Dict], epsg: str = '3857') -> \
-    List[str]:
+            List[str]:
         """Convert GeoJSON coordinates to WKT format in EPSG:4326"""
         try:
             transformer = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326",
@@ -826,29 +944,18 @@ class IPLocationService:
             return ip
 
 
-# Custom print function with optimization
-def print_function(var_name: Any) -> None:
-    """Custom print function with length limiting and type safety"""
-    try:
-        var_str = str(var_name)
-        if len(var_str) > 4000:
-            type_name = type(var_name).__name__
-            length = len(var_name) if hasattr(var_name, '__len__') else len(
-                var_str)
-            print(f"Output too long: {type_name}, length: {length}")
-        else:
-            print(var_name)
-    except Exception as e:
-        print(f"Error in print_function: {e}")
+# Custom print function with optimization (duplicate definition removed - see line 682)
 
 
 # Flask route handlers with enhanced error handling and validation
-@app.before_request
-def before_request():
-    """Initialize session and perform pre-request setup"""
-    SessionManager.initialize_session()
-    SessionManager.cleanup_uploaded_table_references()
-    print('Session initialized and cleaned up')
+# Commented out to fix session persistence issue
+# The initialization is now done only in home() route
+# @app.before_request
+# def before_request():
+#     """Initialize session and perform pre-request setup"""
+#     SessionManager.initialize_session()
+#     SessionManager.cleanup_uploaded_table_references()
+#     print('Session initialized and cleaned up')
 
 
 @socketio.on('join')
@@ -865,12 +972,35 @@ def on_join(data: Dict) -> None:
 def home():
     """Main homepage route with enhanced session management"""
     try:
+        print("\n" + "#" * 70)
+        print("[HOME_ROUTE] STARTING")
+        print(f"  Session ID: {session.get('sid', 'Unknown')}")
+        bbox_before = session.get('globals_dict', {}).get(
+            'bounding_box_region_name') if session.get(
+            'globals_dict') else None
+        print(f"  Bounding box BEFORE init: {bbox_before}")
+        print(
+            f"  User set flag BEFORE: {session.get('user_set_bounding_box', False)}")
+        print("#" * 70)
+
         print("Initializing application")
         del_uploaded_sql()  # Assuming this function exists
 
-        # Initialize session variables with validation
-        # IMPORTANT: Don't reset globals_dict or col_name_mapping_dict here
-        # They should persist across page refreshes and be managed by SessionManager
+        # Initialize session only on home page load
+        print("\n[HOME_ROUTE] Calling SessionManager.initialize_session()...")
+        SessionManager.initialize_session()
+        SessionManager.cleanup_uploaded_table_references()
+        print('[HOME_ROUTE] Session initialized and cleaned up')
+
+        bbox_after = session.get('globals_dict', {}).get(
+            'bounding_box_region_name') if session.get(
+            'globals_dict') else None
+        print(f"\n[HOME_ROUTE] AFTER INIT:")
+        print(f"  Bounding box: {bbox_after}")
+        print(
+            f"  User set flag: {session.get('user_set_bounding_box', False)}")
+
+        # Initialize other session variables with validation
         session.setdefault('file_path', '')
         session.setdefault('ip_', request.remote_addr or 'unknown')
         session.setdefault('uploaded_indication', None)
@@ -1202,6 +1332,15 @@ def read_result():
 @app.route('/submit', methods=['POST'])
 def submit():
     """Main submission handler with enhanced code processing and error handling"""
+    print("\n" + "*" * 70)
+    print("[SUBMIT_ROUTE] STARTING")
+    print(f"  Session ID: {session.get('sid', 'Unknown')}")
+    bbox = session.get('globals_dict', {}).get(
+        'bounding_box_region_name') if session.get('globals_dict') else None
+    print(f"  Current bounding box: {bbox}")
+    print(f"  User set flag: {session.get('user_set_bounding_box', False)}")
+    print("*" * 70)
+
     try:
         # Validate request data
         json_data = request.get_json()
@@ -1213,7 +1352,8 @@ def submit():
         messages = json_data.get('messages', [])
         sid = json_data.get('sid', '').strip()
         current_mode = json_data.get('currentMode', '').strip()
-        agent_mode = json_data.get('agentMode', 'analyzer').strip()  # New parameter
+        agent_mode = json_data.get('agentMode',
+                                   'analyzer').strip()  # New parameter
 
         if not user_input:
             return jsonify({'error': 'No input text provided'}), 400
@@ -1239,7 +1379,8 @@ def submit():
                 else:
                     # Use traditional analyzer mode
                     yield from _process_code_submission(
-                        user_input, messages, sid, current_mode, processed_response
+                        user_input, messages, sid, current_mode,
+                        processed_response
                     )
             except Exception as e:
                 print(f"Error in code processing: {e}")
@@ -1255,33 +1396,34 @@ def submit():
         return jsonify({'error': 'Internal server error'}), 500
 
 
-def _process_explainer_submission(user_input: str, messages: List[Dict], sid: str,
-                                 processed_response: List[Dict]):
+def _process_explainer_submission(user_input: str, messages: List[Dict],
+                                  sid: str,
+                                  processed_response: List[Dict]):
     """Process submission using explainer agent for Cypher-based queries"""
     try:
         from core.ask_functions_agent import explainer_agent
-        
+
         # Show processing status
         yield "Processing your question with Explainer Agent...\n\n"
-        
+
         # Call explainer agent
         result = explainer_agent(user_input, messages)
-        
+
         # Yield the result
         yield result
-        
+
         # Add to processed response
         processed_response.append({
             'role': 'assistant',
             'content': result
         })
-        
+
         # Send final response via WebSocket
         WebSocketManager.send_data(processed_response, sid=sid)
-        
+
         # Log interaction
         _log_interaction(user_input, sid, [result], processed_response)
-        
+
     except Exception as e:
         error_msg = f"Error in explainer submission: {str(e)}"
         print(error_msg)
@@ -1299,6 +1441,13 @@ def _process_code_submission(user_input: str, messages: List[Dict], sid: str,
             # Template mode - direct code execution
             code_list = [user_input]
             yield_list.append(user_input)
+
+            # Print user's direct code input
+            print("\n" + "=" * 80)
+            print("USER DIRECT CODE INPUT (Template Mode):")
+            print("=" * 80)
+            print(user_input)
+            print("=" * 80 + "\n")
         else:
             # AI processing mode
             messages.append(message_template('user',
@@ -1312,7 +1461,7 @@ def _process_code_submission(user_input: str, messages: List[Dict], sid: str,
                 # Process streaming response and yield in real-time
                 total_buffer = ""
                 for char_output in _process_streaming_response_generator(
-                    chat_response, current_mode
+                        chat_response, current_mode
                 ):
                     if isinstance(char_output, tuple):
                         # This is the final result
@@ -1342,6 +1491,18 @@ def _process_code_submission(user_input: str, messages: List[Dict], sid: str,
                         "pip install" not in total_buffer):
                     code_list.extend(
                         code_processor.extract_code_blocks(total_buffer))
+
+                    # Print LLM returned code for debugging
+                    if code_list:
+                        print("\n" + "=" * 80)
+                        print("LLM RETURNED CODE:")
+                        print("=" * 80)
+                        for i, code in enumerate(code_list):
+                            print(f"\n[Code Block {i + 1}]:")
+                            print("-" * 40)
+                            print(code)
+                            print("-" * 40)
+                        print("=" * 80 + "\n")
 
             except Exception as e:
                 yield f"Error in AI processing: {str(e)}\n"
@@ -1396,7 +1557,9 @@ def _process_streaming_response_generator(chat_response, current_mode: str):
                     continue
 
                 # Yield non-code content character by character
-                if (not in_code_block and line_buffer) or line_buffer.startswith('#'):
+                if (
+                        not in_code_block and line_buffer) or line_buffer.startswith(
+                        '#'):
                     output_char = char.replace('#', '#><;').replace("'", '')
                     yield output_char  # Yield character immediately
 
@@ -1443,7 +1606,7 @@ def _process_streaming_response(chat_response, current_mode: str) -> Tuple[
                 # Collect non-code content
                 if (
                         not in_code_block and line_buffer) or line_buffer.startswith(
-                        '#'):
+                    '#'):
                     yield_list.append(
                         char.replace('#', '#><;').replace("'", ''))
 
@@ -1473,18 +1636,36 @@ def _execute_code_block(code: str, sid: str, messages: List[Dict],
         processed_code = code_processor.process_code_for_execution(code,
                                                                    session,
                                                                    sid)
-        
-        print(f"DEBUG: Processed code to execute:")
-        print("=" * 50)
+
+        # Print processed code (not captured in execution result since it's before output capture)
+        print(f"\n{'=' * 60}")
+        print("EXECUTING PROCESSED CODE:")
+        print('-' * 60)
         print(processed_code)
-        print("=" * 50)
+        print('=' * 60)
 
         # Execute code with output capture
         start_time = time.time()
 
+        print(f"\n[EXECUTE_CODE_BLOCK] About to exec() processed code")
+        print(
+            f"  Code snippet: {processed_code[:150] if len(processed_code) > 150 else processed_code}")
+        bbox_before_exec = session.get('globals_dict', {}).get(
+            'bounding_box_region_name') if session.get(
+            'globals_dict') else None
+        print(f"  Bounding box BEFORE exec: {bbox_before_exec}")
+
         with output_capture.capture() as output:
             try:
                 exec(processed_code, globals())
+
+                bbox_after_exec = session.get('globals_dict', {}).get(
+                    'bounding_box_region_name') if session.get(
+                    'globals_dict') else None
+                # print(f"\n[EXECUTE_CODE_BLOCK] AFTER exec()")
+                # print(f"  Bounding box: {bbox_after_exec}")
+
+
             except Exception as e:
                 exc_info = traceback.format_exc()
                 if session.get('template'):
@@ -1498,6 +1679,13 @@ def _execute_code_block(code: str, sid: str, messages: List[Dict],
         # Get execution result
         code_result = str(output.getvalue().replace('\00', ''))
 
+        # Debug: Print what we're about to send
+        print(f"\n[CODE_RESULT] Length: {len(code_result)}")
+        if code_result:
+            print(f"[CODE_RESULT] First 200 chars: {code_result[:200]}")
+        else:
+            print("[CODE_RESULT] Empty - no output from code execution")
+
         # Handle matplotlib output
         if plt_show and "An error occurred: " not in code_result:
             if not os.path.exists(f"static/{filename}"):
@@ -1509,7 +1697,10 @@ def _execute_code_block(code: str, sid: str, messages: List[Dict],
         # Format and yield result
         formatted_result = ResponseFormatter.format_execution_result(
             code_result, run_time)
-        yield list(formatted_result.values())[0]
+        result_to_send = list(formatted_result.values())[0]
+
+
+        yield result_to_send
 
         # Handle errors
         if 'error' in formatted_result:
